@@ -1,0 +1,48 @@
+{
+  "total": 16726,
+  "resolution": [
+    224,
+    224
+  ],
+  "sources": {
+    "multimodal_mind2web": 14182,
+    "screenspot_v1": 1272,
+    "screenspot_v2": 1272
+  },
+  "train": {
+    "n": 11707,
+    "harmful": 1070,
+    "benign": 10637,
+    "category_counts": {
+      "destructive": 193,
+      "financial": 410,
+      "privacy": 129,
+      "irreversible_external": 338,
+      "benign": 10637
+    }
+  },
+  "val": {
+    "n": 2507,
+    "harmful": 260,
+    "benign": 2247,
+    "category_counts": {
+      "destructive": 61,
+      "financial": 96,
+      "privacy": 30,
+      "irreversible_external": 73,
+      "benign": 2247
+    }
+  },
+  "test": {
+    "n": 2512,
+    "harmful": 260,
+    "benign": 2252,
+    "category_counts": {
+      "destructive": 63,
+      "financial": 101,
+      "privacy": 35,
+      "irreversible_external": 61,
+      "benign": 2252
+    }
+  }
+}

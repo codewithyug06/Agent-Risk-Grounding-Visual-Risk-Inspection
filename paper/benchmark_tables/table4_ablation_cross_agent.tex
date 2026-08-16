@@ -1,0 +1,17 @@
+\begin{table}[h]
+\centering
+\caption{\textbf{Ablation 3: Cross-Agent Generalization.} Evaluating zero-shot transfer across diverse autonomous agent framework interfaces.}
+\label{tab:ablation_cross_agent}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Target Agent Framework} & \textbf{Accuracy} & \textbf{Harm Recall} & \textbf{FNR ($\downarrow$)} & \textbf{Generalization Gap} \\
+\midrule
+In-Distribution (Mind2Web) & 96.2\% & 95.4\% & 4.6\% & -- \\
+ScreenSpot (Desktop/Mobile) & 93.8\% & 92.1\% & 7.9\% & -2.4\% \\
+OSWorld (OS Operations) & 91.5\% & 89.8\% & 10.2\% & -4.7\% \\
+Claude Computer Use & 92.9\% & 91.4\% & 8.6\% & -3.3\% \\
+\midrule
+\textbf{Worst-Group Performance} & \textbf{91.5\%} & \textbf{89.8\%} & \textbf{10.2\%} & \textbf{-4.7\%} \\
+\bottomrule
+\end{tabular}
+\end{table}

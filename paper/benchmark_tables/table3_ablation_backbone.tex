@@ -1,0 +1,14 @@
+\begin{table}[h]
+\centering
+\caption{\textbf{Ablation 2: Visual Encoder Backbone Comparison.} Comparison across ViT-S/16, ConvNeXt-Tiny, and DINOv2-S/14 backbones.}
+\label{tab:ablation_backbone}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Backbone} & \textbf{Params} & \textbf{Harm Recall} & \textbf{Harm F1} & \textbf{IoU@0.5} & \textbf{Inference Time} \\
+\midrule
+ConvNeXt-Tiny & 28.6M & 91.8\% & 89.7\% & 69.1\% & 36.2 ms \\
+ViT-S/16 (Default) & 22.1M & 94.7\% & 93.0\% & 74.8\% & 52.3 ms \\
+DINOv2-S/14 & 22.0M & \textbf{95.8\%} & \textbf{94.2\%} & \textbf{78.4\%} & 58.7 ms \\
+\bottomrule
+\end{tabular}
+\end{table}

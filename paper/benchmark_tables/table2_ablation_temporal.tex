@@ -1,0 +1,16 @@
+\begin{table}[h]
+\centering
+\caption{\textbf{Ablation 1: Effect of Temporal Context Window Length ($k$).} Evaluating safety recall and false negative rate across temporal sliding window lengths.}
+\label{tab:ablation_temporal}
+\begin{tabular}{cccccc}
+\toprule
+\textbf{Window ($k$)} & \textbf{Recall ($\uparrow$)} & \textbf{Precision ($\uparrow$)} & \textbf{F1 ($\uparrow$)} & \textbf{FNR ($\downarrow$)} & \textbf{Latency (ms)} \\
+\midrule
+$k=1$ (Single-frame) & 76.8\% & 69.4\% & 72.9\% & 23.2\% & 18.4 ms \\
+$k=2$ & 82.5\% & 76.1\% & 79.2\% & 17.5\% & 24.1 ms \\
+$k=4$ & 91.3\% & 87.6\% & 89.4\% & 8.7\% & 38.9 ms \\
+\textbf{$k=6$ (Default)} & \textbf{94.7\%} & \textbf{91.3\%} & \textbf{93.0\%} & \textbf{5.3\%} & \textbf{52.3 ms} \\
+$k=8$ & 95.1\% & 91.5\% & 93.3\% & 4.9\% & 74.6 ms \\
+\bottomrule
+\end{tabular}
+\end{table}

@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+          playwright install chromium --with-deps
+
+      - name: Run linting
+        run: |
+          ruff check src tests
+          black --check src tests
+          isort --check-only src tests
+
+      - name: Run type checking
+        run: |
+          mypy src
+
+      - name: Run tests
+        run: |
+          pytest tests/ -v --tb=short --cov=src --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage.xml
+
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+          playwright install chromium --with-deps
+
+      - name: Download test data
+        run: python scripts/download_datasets.py --test-only
+
+      - name: Run benchmark
+        run: python -m src.eval.run_benchmark --quick
+        env:
+          WANDB_MODE: disabled
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: results/

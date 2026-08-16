@@ -1,0 +1,32 @@
+stage_a:
+  name: "obvious_harm"
+  description: "Destructive actions with high visual salience (delete, format, rm -rf)"
+  target_categories: ["destructive"]
+  num_epochs: 10
+  learning_rate: 3e-4
+  freeze_backbone: true
+  freeze_temporal: false
+
+stage_b:
+  name: "financial_privacy"
+  description: "Financial transactions and privacy violations"
+  target_categories: ["destructive", "financial", "privacy"]
+  num_epochs: 10
+  learning_rate: 2e-4
+  freeze_backbone: false
+  freeze_temporal: false
+
+stage_c:
+  name: "contextual_edge_cases"
+  description: "Contextual harm - benign-looking actions risky given prior frames"
+  target_categories: ["destructive", "financial", "privacy", "irreversible_external"]
+  num_epochs: 15
+  learning_rate: 1e-4
+  freeze_backbone: false
+  freeze_temporal: false
+  hard_example_mining: true
+  hard_example_top_k: 0.2
+
+eval_frequency: 1
+checkpoint_metric: "val_recall_harmful"
+early_stopping_patience: 5

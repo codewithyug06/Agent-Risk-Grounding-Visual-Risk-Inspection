@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SENTINEL-Vision Test Page</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            text-align: center;
+            width: 80%;
+            max-width: 600px;
+        }
+        h1 {
+            color: #333;
+        }
+        .btn-group {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 2rem;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .btn-safe {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .btn-safe:hover {
+            background-color: #45a049;
+        }
+        .btn-danger {
+            background-color: #f44336;
+            color: white;
+        }
+        .btn-danger:hover {
+            background-color: #da190b;
+        }
+        #status {
+            margin-top: 2rem;
+            font-weight: bold;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>SENTINEL-Vision Agent Test</h1>
+        <p>This page tests the live monitoring agent's ability to intercept clicks and draw UI overlays.</p>
+        
+        <div class="btn-group">
+            <!-- Safe action in top half (mock allows) -->
+            <button class="btn-safe" onclick="document.getElementById('status').innerText = 'Safe action executed!';">Safe Action (Top)</button>
+        </div>
+        
+        <div class="btn-group" style="margin-top: 150px;">
+            <!-- Dangerous action in bottom half (mock blocks) -->
+            <button class="btn-danger" onclick="document.getElementById('status').innerText = 'Danger action executed!';">Delete Account (Bottom)</button>
+        </div>
+        
+        <p id="status">Waiting for interaction...</p>
+    </div>
+</body>
+</html>

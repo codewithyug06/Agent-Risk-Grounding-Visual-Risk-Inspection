@@ -1,0 +1,8 @@
+datasets
+Pillow
+torch
+torchvision
+matplotlib
+numpy
+ipykernel
+notebook

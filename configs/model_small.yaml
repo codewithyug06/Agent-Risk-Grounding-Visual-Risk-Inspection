@@ -1,0 +1,31 @@
+backbone: "vit_small_patch16_224"
+pretrained: true
+freeze_backbone_epochs: 3
+
+temporal:
+  num_heads: 8
+  num_layers: 3
+  dropout: 0.1
+  max_frames: 8
+
+risk_head:
+  hidden_dim: 256
+  num_categories: 5
+
+localization:
+  anchor_sizes: [32, 64, 128, 256]
+  num_anchors: 9
+  iou_threshold: 0.5
+
+training:
+  batch_size: 16
+  learning_rate: 3e-4
+  weight_decay: 1e-4
+  epochs: 35
+  warmup_epochs: 3
+  gradient_clip: 1.0
+  mixed_precision: true
+  num_workers: 4
+
+seed: 42
+device: "cuda"

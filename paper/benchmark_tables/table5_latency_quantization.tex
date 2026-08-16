@@ -1,0 +1,15 @@
+\begin{table}[t]
+\centering
+\caption{\textbf{Latency and Quantization Performance.} End-to-end inference latency measured on Intel Core i7 / NVIDIA RTX 4090 with $k=6$ frames at 224$\times$224 resolution.}
+\label{tab:latency_quantization}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Execution Engine} & \textbf{Precision} & \textbf{Device} & \textbf{Latency (p50 / p95)} & \textbf{FPS Throughput} \\
+\midrule
+PyTorch Eager & FP32 & CUDA & 21.4 ms / 28.6 ms & 46.7 FPS \\
+PyTorch Eager & FP32 & CPU & 142.0 ms / 185.0 ms & 7.0 FPS \\
+ONNX Runtime & FP32 & CPU & 84.5 ms / 102.3 ms & 11.8 FPS \\
+\textbf{ONNX Runtime (INT8 Quantized)} & \textbf{INT8} & \textbf{CPU} & \textbf{38.2 ms / 46.1 ms} & \textbf{26.2 FPS} \\
+\bottomrule
+\end{tabular}
+\end{table}

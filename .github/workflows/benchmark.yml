@@ -1,0 +1,60 @@
+name: Weekly Benchmark
+
+on:
+  schedule:
+    - cron: "0 2 * * 0"  # Every Sunday 2 AM UTC
+  workflow_dispatch:
+
+jobs:
+  full-benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+          playwright install chromium --with-deps
+
+      - name: Download full datasets
+        run: python scripts/download_datasets.py
+
+      - name: Generate synthetic data
+        run: python scripts/generate_synthetic_data.py
+
+      - name: Run full benchmark suite
+        run: python -m src.eval.run_benchmark --full
+        env:
+          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+
+      - name: Run ablations
+        run: python -m src.eval.ablations
+
+      - name: Run adversarial stress tests
+        run: python -m src.eval.adversarial_stress_test
+
+      - name: Upload all results
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-benchmark-results
+          path: results/
+
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: "Weekly Benchmark Failed",
+              body: "The weekly benchmark run failed. Check the workflow logs for details."
+            })
