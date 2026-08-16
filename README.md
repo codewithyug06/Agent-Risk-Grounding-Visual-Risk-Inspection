@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>🛡️ Agent Risk Grounding & Visual Risk Inspection (ARG-VRI)</h1>
+  <h1>Agent Risk Grounding & Visual Risk Inspection (ARG-VRI)</h1>
   <h3><b>SENTINEL-Vision: Real-Time Visual Safety Monitoring for Computer-Use AI Agents via Temporal Risk Detection and UI Element Grounding</b></h3>
 
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -20,24 +20,24 @@
 
 ---
 
-## 📑 Table of Contents
-1. [Industry Context & Problem Formulation](#-industry-context--the-problem)
-2. [Why Pixels-Only? The Structural Flaw in LLM Oversight](#-the-structural-flaw-in-current-safety-systems)
-3. [Who Is This Useful For?](#-who-is-this-useful-for)
-4. [System Architecture](#-system-architecture)
-5. [Models & Mathematical Methodology](#-models--mathematical-methodology)
-6. [End-to-End Workflow](#-end-to-end-workflow)
-7. [Turnkey Desktop Security Wall & Public Deployment](#-turnkey-desktop-security-wall--public-deployment)
-8. [Comprehensive Empirical Benchmarks](#-comprehensive-empirical-benchmarks)
-9. [Ablation Studies](#-ablation-studies)
-10. [Latency, FPS & Quantization Performance](#-latency-fps--quantization-performance)
-11. [File Skeleton & Codebase Navigation](#-file-skeleton--codebase-navigation)
-12. [Installation & Getting Started](#-installation--getting-started)
-13. [Citation & Author](#-citation--author)
+## Table of Contents
+1. [Industry Context & Problem Formulation](#industry-context--the-problem)
+2. [Why Pixels-Only? The Structural Flaw in LLM Oversight](#the-structural-flaw-in-current-safety-systems)
+3. [Who Is This Useful For?](#who-is-this-useful-for)
+4. [System Architecture](#system-architecture)
+5. [Models & Mathematical Methodology](#models--mathematical-methodology)
+6. [End-to-End Workflow](#end-to-end-workflow)
+7. [Turnkey Desktop Security Wall & Public Deployment](#turnkey-desktop-security-wall--public-deployment)
+8. [Comprehensive Empirical Benchmarks](#comprehensive-empirical-benchmarks)
+9. [Ablation Studies](#ablation-studies)
+10. [Latency, FPS & Quantization Performance](#latency-fps--quantization-performance)
+11. [File Skeleton & Codebase Navigation](#file-skeleton--codebase-navigation)
+12. [Installation & Getting Started](#installation--getting-started)
+13. [Citation & Author](#citation--author)
 
 ---
 
-## 🚨 Industry Context & The Problem
+## Industry Context & The Problem
 
 As autonomous computer-use agents (Anthropic Claude Computer Use, OpenAI Operator, Antigravity Browser Preview, browser automation agents, and RPA bots) transition from sandboxed benchmarks into production OS and enterprise environments, they gain the ability to click buttons, enter payment information, alter system configurations, and execute terminal commands.
 
@@ -49,43 +49,43 @@ As autonomous computer-use agents (Anthropic Claude Computer Use, OpenAI Operato
 
 ---
 
-## 🛑 The Structural Flaw in Current Safety Systems
+## The Structural Flaw in Current Safety Systems
 
 ```
 TRADITIONAL COLLUSIVE MONITORING (INSECURE)
-┌────────────────────────────────────────────────────────┐
-│  AI Agent LLM (Internal Reasoning & Log Generator)     │
-│  "I am just optimizing the user's hard drive space!"   │
-└──────────────────────────┬─────────────────────────────┘
-                           │ (Shared Information Channel)
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│  Safety Monitor (Reads Agent Logs / Tool Traces)        │
-│  "Logs say it's harmless. APPROVED."                   │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-                           ▼
-                 💥 ACCIDENT / MALPRACTICE
+
+  AI Agent LLM (Internal Reasoning & Log Generator)     
+  "I am just optimizing the user's hard drive space!"   
+
+                            (Shared Information Channel)
+                           
+
+  Safety Monitor (Reads Agent Logs / Tool Traces)        
+  "Logs say it's harmless. APPROVED."                   
+
+                           
+                           
+                  ACCIDENT / MALPRACTICE
         (Agent clicks "Drop Production Database")
 
 ========================================================================
 
 ARG-VRI / SENTINEL-VISION VISUAL FIREWALL (SECURE & NON-COLLUSIVE)
-┌────────────────────────────────────────────────────────┐
-│  AI Agent LLM (Any Model: Claude, GPT-4o, DeepSeek)    │
-│  Generates action: CLICK(x=840, y=520)                 │
-└──────────────────────────┬─────────────────────────────┘
-                           │ Intercepted before execution
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│  🛡️ SENTINEL-Vision (Pixels-Only Visual Oversight)     │
-│  - Captures actual screen pixel buffer (k=6 frames)    │
-│  - Detects destructive button: "DROP DATABASE"         │
-│  - Computes Visual Risk: 94.7% (Destructive)           │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-                           ▼
-                🚨 ACTION HARD-BLOCKED!
+
+  AI Agent LLM (Any Model: Claude, GPT-4o, DeepSeek)    
+  Generates action: CLICK(x=840, y=520)                 
+
+                            Intercepted before execution
+                           
+
+   SENTINEL-Vision (Pixels-Only Visual Oversight)     
+  - Captures actual screen pixel buffer (k=6 frames)    
+  - Detects destructive button: "DROP DATABASE"         
+  - Computes Visual Risk: 94.7% (Destructive)           
+
+                           
+                           
+                 ACTION HARD-BLOCKED!
          Visual Malpractice Alert Sent to User
 ```
 
@@ -95,7 +95,7 @@ ARG-VRI / SENTINEL-VISION VISUAL FIREWALL (SECURE & NON-COLLUSIVE)
 
 ---
 
-## 🎯 Who Is This Useful For?
+## Who Is This Useful For?
 
 | Stakeholder / Persona | Operational Benefit |
 | :--- | :--- |
@@ -107,7 +107,7 @@ ARG-VRI / SENTINEL-VISION VISUAL FIREWALL (SECURE & NON-COLLUSIVE)
 
 ---
 
-## ⚙️ System Architecture
+## System Architecture
 
 ```mermaid
 graph TD
@@ -139,7 +139,7 @@ graph TD
 
 ---
 
-## 🔬 Models & Mathematical Methodology
+## Models & Mathematical Methodology
 
 ### 1. Spatiotemporal Formulation
 Let the input at time step $t$ be a rolling window of $k$ frames:
@@ -179,36 +179,36 @@ $$R(a, y) = \begin{cases} +1.0 & \text{if } y = \text{Harmful and } a = \text{HA
 
 ---
 
-## 🔄 End-to-End Workflow
+## End-to-End Workflow
 
 ```
 [1. Real Dataset Ingestion]
-   ├── 16,726 Preprocessed Samples (Mind2Web, ScreenSpot, ScreenSpot-v2, AgentTrek)
-   └── Synthetic Injection: Automated Playwright injection of harmful UI analogs
-            │
-            ▼
+    16,726 Preprocessed Samples (Mind2Web, ScreenSpot, ScreenSpot-v2, AgentTrek)
+    Synthetic Injection: Automated Playwright injection of harmful UI analogs
+            
+            
 [2. Multi-Stage Curriculum Training]
-   ├── Stage A: Obvious visual harm detection (terminal drops, format disk)
-   ├── Stage B: Multi-class categorization + Spatial Heatmap grounding
-   └── Stage C: Hard boundary contextual harms with Online Hard Example Mining (OHEM)
-            │
-            ▼
+    Stage A: Obvious visual harm detection (terminal drops, format disk)
+    Stage B: Multi-class categorization + Spatial Heatmap grounding
+    Stage C: Hard boundary contextual harms with Online Hard Example Mining (OHEM)
+            
+            
 [3. Decision Gate Policy Optimization]
-   └── PPO Reinforcement Learning with Asymmetric Cost Optimization (-10 Miss Penalty)
-            │
-            ▼
+    PPO Reinforcement Learning with Asymmetric Cost Optimization (-10 Miss Penalty)
+            
+            
 [4. Production Packaging & Optimization]
-   ├── ONNX INT8 Quantization (38.2 ms on CPU)
-   └── Desktop Security Wall Service & REST API Gateway
-            │
-            ▼
+    ONNX INT8 Quantization (38.2 ms on CPU)
+    Desktop Security Wall Service & REST API Gateway
+            
+            
 [5. Real-Time Execution Oversight]
-   └── Intercepts Agent Actions -> Blocks Malpractice -> Generates Visual Audit Report
+    Intercepts Agent Actions -> Blocks Malpractice -> Generates Visual Audit Report
 ```
 
 ---
 
-## 🚀 Turnkey Desktop Security Wall & Public Deployment
+## Turnkey Desktop Security Wall & Public Deployment
 
 Any user can immediately install SENTINEL-Vision on their computer as a background security firewall.
 
@@ -250,7 +250,7 @@ should_proceed, decision, incident = wall.monitor_action(
 )
 
 if not should_proceed:
-    print(f"🚨 BLOCKED by Sentinel Security Wall! Risk: {decision.category} ({decision.risk_score:.2%})")
+    print(f" BLOCKED by Sentinel Security Wall! Risk: {decision.category} ({decision.risk_score:.2%})")
 ```
 
 ### 5. FastAPI Gateway
@@ -260,7 +260,7 @@ python -m uvicorn src.integration.intercept_api:app --host 127.0.0.1 --port 8000
 
 ---
 
-## 📊 Comprehensive Empirical Benchmarks
+## Comprehensive Empirical Benchmarks
 
 Evaluated across **16,726 multimodal trajectory samples** (11,707 train / 2,507 val / 2,512 test; 1,590 harmful cues):
 
@@ -275,7 +275,7 @@ Evaluated across **16,726 multimodal trajectory samples** (11,707 train / 2,507 
 
 ---
 
-## 🔬 Ablation Studies
+## Ablation Studies
 
 ### Table 2: Effect of Temporal Context Window Length ($k$)
 | Window Size ($k$) | Harm Recall ($\uparrow$) | Precision ($\uparrow$) | Harm F1 ($\uparrow$) | False Negative Rate ($\downarrow$) | Latency |
@@ -304,86 +304,86 @@ Evaluated across **16,726 multimodal trajectory samples** (11,707 train / 2,507 
 
 ---
 
-## ⚡ Latency, FPS & Quantization Performance
+## Latency, FPS & Quantization Performance
 
 ### Table 5: Execution Engine Latency & Throughput
 | Execution Engine | Precision | Compute Device | Latency (p50 / p95) | FPS Throughput | Real-Time Status |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| PyTorch Eager | FP32 | NVIDIA RTX 4090 | 21.4 ms / 28.6 ms | 46.7 FPS | ✅ Ultra Real-Time |
-| PyTorch Eager | FP32 | Intel Core i7 (CPU) | 142.0 ms / 185.0 ms | 7.0 FPS | ✅ Real-Time (<500ms) |
-| ONNX Runtime | FP32 | Intel Core i7 (CPU) | 84.5 ms / 102.3 ms | 11.8 FPS | ✅ Real-Time (<500ms) |
-| **ONNX Runtime (Quantized)** | **INT8** | **Intel Core i7 (CPU)** | **38.2 ms / 46.1 ms** | **26.2 FPS** | 🚀 **Sub-40ms CPU Real-Time** |
+| PyTorch Eager | FP32 | NVIDIA RTX 4090 | 21.4 ms / 28.6 ms | 46.7 FPS | [Pass] Ultra Real-Time |
+| PyTorch Eager | FP32 | Intel Core i7 (CPU) | 142.0 ms / 185.0 ms | 7.0 FPS | [Pass] Real-Time (<500ms) |
+| ONNX Runtime | FP32 | Intel Core i7 (CPU) | 84.5 ms / 102.3 ms | 11.8 FPS | [Pass] Real-Time (<500ms) |
+| **ONNX Runtime (Quantized)** | **INT8** | **Intel Core i7 (CPU)** | **38.2 ms / 46.1 ms** | **26.2 FPS** | **[Pass] Sub-40ms CPU Real-Time** |
 
 ---
 
-## 📁 File Skeleton & Codebase Navigation
+## File Skeleton & Codebase Navigation
 
 ```text
 sentinel-vision/
-├── configs/                            # Hydra configuration files
-│   ├── config.yaml                     # Default hyperparameter hierarchy
-│   ├── model/                          # ViT-S, ConvNeXt, DINOv2 configurations
-│   ├── data/                           # Data loader & augmentation configs
-│   ├── training/                       # Stage A/B/C curriculum configs
-│   └── gate/                           # PPO Decision Gate hyperparameters
-├── data/
-│   ├── processed/                      # 16,726 preprocessed multimodal trajectories
-│   └── synthetic_injections/           # Playwright-generated harmful variant suites
-├── src/
-│   ├── data/                           # Ingestion, loaders, sliding window buffers
-│   │   ├── loaders.py                  # SentinelDataset & multi-source parsers
-│   │   ├── frame_windowing.py          # Sliding window collator (k=6)
-│   │   ├── augmentation.py             # Spatiotemporal transforms & color jitter
-│   │   └── heatmap_labels.py           # Gaussian heatmap label generator
-│   ├── models/                         # Model architectures
-│   │   ├── frame_encoder.py            # ViT-S/16, ConvNeXt-Tiny, DINOv2-S/14
-│   │   ├── temporal_fusion.py          # Temporal transformer with delta dynamics
-│   │   ├── risk_head.py                # Binary risk & 5-class categorizer
-│   │   ├── localization_head.py        # Multi-anchor UI element detection head
-│   │   └── sentinel_model.py           # Full end-to-end model assembly + MC Dropout
-│   ├── gate/                           # Reinforcement Learning decision policy
-│   │   ├── decision_gate.py            # PPO Actor-Critic DecisionGate
-│   │   ├── reward.py                   # Asymmetric cost reward function (-10 penalty)
-│   │   └── train_gate_rl.py            # PPO training loop
-│   ├── training/                       # Multi-stage training pipeline
-│   │   ├── trainer.py                  # Distributed curriculum trainer
-│   │   ├── losses.py                   # Focal, GIoU, InfoNCE contrastive, OHEM losses
-│   │   ├── train_stageA.py             # Stage A: Obvious visual harm detection
-│   │   ├── train_stageB.py             # Stage B: Categorization & localization
-│   │   └── train_stageC.py             # Stage C: Contextual subtle harms
-│   ├── eval/                           # Benchmarking & evaluation suite
-│   │   ├── metrics.py                  # Recall, FNR, FPR, IoU@0.5, cross-agent gap
-│   │   ├── run_benchmark.py            # Full benchmark comparison runner
-│   │   ├── ablations.py                # 5 Ablation study runner
-│   │   ├── adversarial_stress_test.py  # UI obfuscation & action chaining attacks
-│   │   └── plot_results.py             # ROC, PR, and Confusion matrix generator
-│   ├── integration/                    # Live agent interception wrappers
-│   │   ├── agent_wrapper.py            # SentinelWrapper & FrameBuffer
-│   │   ├── live_monitor.py             # Screen capture & live visual overlay
-│   │   └── intercept_api.py            # FastAPI REST gateway (/intercept)
-│   ├── security_wall/                  # Desktop visual firewall & incident logging
-│   │   ├── desktop_wall.py             # SentinelSecurityWall core service
-│   │   ├── incident_reporter.py        # Screenshot evidence annotator & HTML dashboard
-│   │   └── cli.py                      # CLI commands (sentinel-wall demo/dashboard)
-│   └── utils/                          # Logging, visualization, configuration helpers
-├── scripts/                            # Operational scripts
-│   ├── download_datasets.py            # Mind2Web, ScreenSpot, AgentTrek downloader
-│   ├── preprocess_real_data.py         # 16,726 trajectory preprocessor
-│   ├── export_onnx.py                  # ONNX FP32 & INT8 quantization pipeline
-│   └── generate_research_reports.py    # LaTeX benchmark tables & report generator
-├── paper/                              # Academic research package
-│   ├── draft.tex                       # Complete academic manuscript
-│   ├── benchmark_tables/               # LaTeX table files (Table 1 - Table 5)
-│   └── figures/                        # Generated ROC, PR, Confusion Matrix plots
-├── reports/                            # System performance & benchmark reports
-├── docs/                               # Detailed documentation & deployment guide
-│   └── PUBLIC_DEPLOYMENT_GUIDE.md      # Public user guide for the security firewall
-└── tests/                              # Comprehensive test suite (122/122 passed)
+|-- configs/                            # Hydra configuration files
+|   |-- config.yaml                     # Default hyperparameter hierarchy
+|   |-- model/                          # ViT-S, ConvNeXt, DINOv2 configurations
+|   |-- data/                           # Data loader & augmentation configs
+|   |-- training/                       # Stage A/B/C curriculum configs
+|   `-- gate/                           # PPO Decision Gate hyperparameters
+|-- data/
+|   |-- processed/                      # 16,726 preprocessed multimodal trajectories
+|   `-- synthetic_injections/           # Playwright-generated harmful variant suites
+|-- src/
+|   |-- data/                           # Ingestion, loaders, sliding window buffers
+|   |   |-- loaders.py                  # SentinelDataset & multi-source parsers
+|   |   |-- frame_windowing.py          # Sliding window collator (k=6)
+|   |   |-- augmentation.py             # Spatiotemporal transforms & color jitter
+|   |   `-- heatmap_labels.py           # Gaussian heatmap label generator
+|   |-- models/                         # Model architectures
+|   |   |-- frame_encoder.py            # ViT-S/16, ConvNeXt-Tiny, DINOv2-S/14
+|   |   |-- temporal_fusion.py          # Temporal transformer with delta dynamics
+|   |   |-- risk_head.py                # Binary risk & 5-class categorizer
+|   |   |-- localization_head.py        # Multi-anchor UI element detection head
+|   |   `-- sentinel_model.py           # Full end-to-end model assembly + MC Dropout
+|   |-- gate/                           # Reinforcement Learning decision policy
+|   |   |-- decision_gate.py            # PPO Actor-Critic DecisionGate
+|   |   |-- reward.py                   # Asymmetric cost reward function (-10 penalty)
+|   |   `-- train_gate_rl.py            # PPO training loop
+|   |-- training/                       # Multi-stage training pipeline
+|   |   |-- trainer.py                  # Distributed curriculum trainer
+|   |   |-- losses.py                   # Focal, GIoU, InfoNCE contrastive, OHEM losses
+|   |   |-- train_stageA.py             # Stage A: Obvious visual harm detection
+|   |   |-- train_stageB.py             # Stage B: Categorization & localization
+|   |   `-- train_stageC.py             # Stage C: Contextual subtle harms
+|   |-- eval/                           # Benchmarking & evaluation suite
+|   |   |-- metrics.py                  # Recall, FNR, FPR, IoU@0.5, cross-agent gap
+|   |   |-- run_benchmark.py            # Full benchmark comparison runner
+|   |   |-- ablations.py                # 5 Ablation study runner
+|   |   |-- adversarial_stress_test.py  # UI obfuscation & action chaining attacks
+|   |   `-- plot_results.py             # ROC, PR, and Confusion matrix generator
+|   |-- integration/                    # Live agent interception wrappers
+|   |   |-- agent_wrapper.py            # SentinelWrapper & FrameBuffer
+|   |   |-- live_monitor.py             # Screen capture & live visual overlay
+|   |   `-- intercept_api.py            # FastAPI REST gateway (/intercept)
+|   |-- security_wall/                  # Desktop visual firewall & incident logging
+|   |   |-- desktop_wall.py             # SentinelSecurityWall core service
+|   |   |-- incident_reporter.py        # Screenshot evidence annotator & HTML dashboard
+|   |   `-- cli.py                      # CLI commands (sentinel-wall demo/dashboard)
+|   `-- utils/                          # Logging, visualization, configuration helpers
+|-- scripts/                            # Operational scripts
+|   |-- download_datasets.py            # Mind2Web, ScreenSpot, AgentTrek downloader
+|   |-- preprocess_real_data.py         # 16,726 trajectory preprocessor
+|   |-- export_onnx.py                  # ONNX FP32 & INT8 quantization pipeline
+|   `-- generate_research_reports.py    # LaTeX benchmark tables & report generator
+|-- paper/                              # Academic research package
+|   |-- draft.tex                       # Complete academic manuscript
+|   |-- benchmark_tables/               # LaTeX table files (Table 1 - Table 5)
+|   `-- figures/                        # Generated ROC, PR, Confusion Matrix plots
+|-- reports/                            # System performance & benchmark reports
+|-- docs/                               # Detailed documentation & deployment guide
+|   `-- PUBLIC_DEPLOYMENT_GUIDE.md      # Public user guide for the security firewall
+`-- tests/                              # Comprehensive test suite (122/122 passed)
 ```
 
 ---
 
-## 🧪 Comprehensive Verification & Test Suite
+## Comprehensive Verification & Test Suite
 
 The test suite validates the entire data pipeline, visual backbones, temporal fusion, multi-task heads, RL decision gate, ONNX INT8 export, and desktop security wall:
 
@@ -398,7 +398,7 @@ python -m pytest tests/ -v
 
 ---
 
-## 📜 Citation & Author
+## Citation & Author
 
 ```bibtex
 @article{bommula2026sentinelvision,
@@ -409,7 +409,7 @@ python -m pytest tests/ -v
 }
 ```
 
-### 👨‍💻 Project Leadership & Contact
+### Project Leadership & Contact
 **Yugendhar Reddy Bommula**  
 *Roll Number:* CB.AI.U4AID24018  
 *Institution:* Amrita Vishwa Vidyapeetham, Coimbatore  
@@ -419,5 +419,5 @@ python -m pytest tests/ -v
 
 ---
 <div align="center">
-  <sub>Built with ❤️ for AI Safety, Scalable Oversight, and Autonomous Computer-Use Agent Security.</sub>
+  <sub>Built for AI Safety, Scalable Oversight, and Autonomous Computer-Use Agent Security.</sub>
 </div>
