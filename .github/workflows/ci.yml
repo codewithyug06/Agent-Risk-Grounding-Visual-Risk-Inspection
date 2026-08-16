@@ -10,20 +10,14 @@ jobs:
   test:
     name: Unit & Integration Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     env:
       MPLBACKEND: Agg
-      QT_QPA_PLATFORM: offscreen
       PYTHONPATH: .
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Install System Libraries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgl1 libglib2.0-0 xvfb
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
@@ -40,7 +34,7 @@ jobs:
 
       - name: Run Test Suite (122 Tests)
         run: |
-          xvfb-run -a python -m pytest tests/ -v --tb=short
+          python -m pytest tests/ -v --tb=short
 
       - name: Verify CLI Tools
         run: |
