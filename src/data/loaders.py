@@ -375,6 +375,8 @@ class SentinelDataset(Dataset):
             "bbox": torch.tensor(target_pair.bbox if target_pair.bbox else [0, 0, 0, 0], dtype=torch.float32),
             "has_bbox": torch.tensor(1.0 if target_pair.bbox else 0.0, dtype=torch.float32),
             "trajectory_id": traj.trajectory_id,
+            "trajectory_idx": traj_idx,
+            "action_idx": action_idx,
             "action": target_pair.action,
         }
 
