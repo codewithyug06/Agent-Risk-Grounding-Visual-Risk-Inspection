@@ -55,8 +55,8 @@ class FrameCapture:
             import mss
             self.sct = mss.mss()
             self.monitors = self.sct.monitors
-        except ImportError:
-            logger.warning("mss not available, using fallback")
+        except Exception:
+            logger.warning("mss not available or DISPLAY not set, using fallback")
             self.sct = None
 
     def capture(self, region: Optional[Tuple[int, int, int, int]] = None) -> Image.Image:

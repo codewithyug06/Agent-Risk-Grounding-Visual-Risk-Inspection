@@ -11,6 +11,9 @@ jobs:
     name: Unit & Integration Tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      MPLBACKEND: Agg
+      QT_QPA_PLATFORM: offscreen
 
     steps:
       - name: Checkout repository
@@ -26,7 +29,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
-          pip install mss || true
+          pip install mss xvfbwrapper || true
 
       - name: Run Test Suite (122 Tests)
         run: |
@@ -34,4 +37,4 @@ jobs:
 
       - name: Verify CLI Tools
         run: |
-          sentinel-wall --help || python -m src.security_wall.cli --help
+          python -m src.security_wall.cli --help
