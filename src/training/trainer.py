@@ -74,7 +74,11 @@ class SentinelTrainer:
         self.early_stopping_counter = 0
 
         # Mixed precision
-        self.scaler = GradScaler(enabled=self.mixed_precision)
+        device_type = "cuda" if str(device).startswith("cuda") else "cpu"
+        try:
+            self.scaler = torch.amp.GradScaler(device_type, enabled=self.mixed_precision)
+        except Exception:
+            self.scaler = GradScaler(enabled=self.mixed_precision)
 
         # W&B
         self.use_wandb = config.get("wandb", {}).get("enabled", False) and WANDB_AVAILABLE

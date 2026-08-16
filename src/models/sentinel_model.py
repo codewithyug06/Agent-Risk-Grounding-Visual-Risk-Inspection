@@ -64,6 +64,11 @@ class SentinelModel(nn.Module):
 
         logger.info("SENTINEL-Vision model assembled")
 
+    def set_epoch(self, epoch: int):
+        """Pass epoch transition down to sub-modules (e.g. FrameEncoder backbone unfreezing)."""
+        if hasattr(self.frame_encoder, "set_epoch"):
+            self.frame_encoder.set_epoch(epoch)
+
     def forward(self, frame_window: torch.Tensor) -> Dict[str, Any]:
         """
         Full forward pass.
