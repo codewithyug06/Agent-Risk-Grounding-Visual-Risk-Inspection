@@ -30,7 +30,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install torch torchvision --extra-index-url https://download.pytorch.org/whl/cpu
-          pip install timm onnx onnxruntime opencv-python-headless pillow fastapi uvicorn pydantic hydra-core omegaconf wandb tqdm numpy pandas scikit-learn matplotlib seaborn mss pytest pytest-cov pytest-asyncio
+          pip install timm datasets transformers onnx onnxruntime opencv-python-headless pillow fastapi uvicorn pydantic hydra-core omegaconf wandb tqdm numpy pandas scikit-learn matplotlib seaborn mss pytest pytest-cov pytest-asyncio
           pip install -e . --no-deps
 
       - name: Run Test Suite (122 Tests)
