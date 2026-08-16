@@ -158,7 +158,7 @@ class SentinelTrainer:
                     break
 
             # Regular checkpoint
-            if epoch % config.get("save_interval", 5) == 0:
+            if epoch % self.config.get("save_interval", 5) == 0:
                 self._save_checkpoint(epoch, val_metrics if 'val_metrics' in locals() else {}, is_best=False)
 
             # Scheduler step
