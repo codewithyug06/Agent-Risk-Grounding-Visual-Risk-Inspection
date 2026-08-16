@@ -21,7 +21,7 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Large Datasets & Cache (Datasets should be downloaded via scripts/download_datasets.py)
+# Large Datasets & Generated Manifests (Run scripts/preprocess_real_data.py to build)
 data/Mind2Web/
 data/Multimodal-Mind2Web/
 data/ScreenSpot/
@@ -29,15 +29,27 @@ data/ScreenSpot-v2/
 data/AgentTrek/
 data/visualwebarena/
 data/processed/frames/
+data/processed/*.jsonl
+data/processed/_samples.jsonl
+data/Dataset_Download.py
 HF_Cache/
 *.tar.gz
 *.zip
+
+# Scratch and Internal Test Logs
+scripts/_*.py
+scripts/clean_emojis.py
+scripts/smoke_test_real_data.py
+notebooks/sample_window.png
+*.tmp
+*.log
 
 # Checkpoints & Large Weights (Keep directory structure with .gitkeep)
 checkpoints/*.pt
 checkpoints/*.pth
 checkpoints/*.onnx
 !checkpoints/.gitkeep
+!data/processed/.gitkeep
 
 # Local incident logs & runs
 wandb/
