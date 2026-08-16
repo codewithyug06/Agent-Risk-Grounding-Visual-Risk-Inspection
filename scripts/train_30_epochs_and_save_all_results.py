@@ -351,13 +351,11 @@ def run_full_30_epoch_training():
         risk_weight=config.loss.risk_weight,
         category_weight=config.loss.category_weight,
         localization_weight=config.loss.localization_weight,
+        use_focal_loss=True,
         focal_gamma=config.loss.focal_gamma,
         focal_alpha=config.loss.focal_alpha,
         giou_weight=config.loss.giou_weight,
         l1_weight=config.loss.l1_weight,
-        heatmap_weight=config.loss.heatmap_weight,
-        use_contrastive=config.loss.use_contrastive,
-        contrastive_weight=config.loss.contrastive_weight,
     )
 
     optimizer = torch.optim.AdamW(
