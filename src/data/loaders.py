@@ -344,19 +344,27 @@ class SentinelDataset(Dataset):
         traj = self.trajectories[traj_idx]
         k = self.frame_window_k
 
-        frames = []
+        raw_frames = []
         for i in range(start_idx, min(start_idx + k, len(traj.pairs))):
-            frame = traj.pairs[i].frame.resize(self.target_resolution, Image.LANCZOS)
-            if self.transform:
-                frame = self.transform(frame)
+            raw_frames.append(traj.pairs[i].frame)
+
+        while len(raw_frames) < k:
+            raw_frames.append(raw_frames[-1] if raw_frames else Image.new("RGB", self.target_resolution))
+
+        if self.transform:
+            transformed = self.transform(raw_frames)
+            if isinstance(transformed, list):
+                frames_tensor = torch.stack(transformed)
+            elif isinstance(transformed, torch.Tensor) and transformed.dim() == 4:
+                frames_tensor = transformed
             else:
-                frame = torch.from_numpy(np.array(frame)).permute(2, 0, 1).float() / 255.0
-            frames.append(frame)
-
-        while len(frames) < k:
-            frames.append(frames[-1] if frames else torch.zeros(3, *self.target_resolution))
-
-        frames_tensor = torch.stack(frames)
+                frames_tensor = torch.stack([self.transform(f) for f in raw_frames])
+        else:
+            processed = [
+                torch.from_numpy(np.array(f.resize(self.target_resolution, Image.LANCZOS))).permute(2, 0, 1).float() / 255.0
+                for f in raw_frames
+            ]
+            frames_tensor = torch.stack(processed)
 
         target_pair = traj.pairs[action_idx]
 

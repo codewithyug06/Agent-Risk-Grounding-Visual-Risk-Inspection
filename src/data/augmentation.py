@@ -8,7 +8,7 @@ import torch
 import torchvision.transforms as T
 import torchvision.transforms.functional as TF
 from PIL import Image, ImageFilter
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Optional, Dict, Any, Union
 import numpy as np
 
 
@@ -90,26 +90,33 @@ class ScreenshotAugmentation:
         sigma = random.uniform(*self.gaussian_blur_sigma)
         return img.filter(ImageFilter.GaussianBlur(radius=sigma))
 
-    def __call__(self, frames: List[Image.Image]) -> List[torch.Tensor]:
+    def __call__(
+        self,
+        frames: Union[List[Image.Image], Image.Image],
+    ) -> Union[List[torch.Tensor], torch.Tensor]:
         """
-        Apply augmentations to a list of frames.
+        Apply augmentations to a list of frames or a single frame.
 
         Args:
-            frames: List of PIL Images (length k)
+            frames: List of PIL Images (length k) or single PIL Image
 
         Returns:
-            List of tensors (C, H, W) in range [0, 1]
+            List of tensors (C, H, W) or single tensor in range [0, 1]
         """
-        if not frames:
-            return [torch.zeros(3, *self.target_resolution) for _ in range(6)]
+        is_single = isinstance(frames, Image.Image) or not isinstance(frames, (list, tuple))
+        frame_list = [frames] if is_single else list(frames)
 
-        k = len(frames)
+        if not frame_list:
+            res = [torch.zeros(3, *self.target_resolution) for _ in range(6)]
+            return res[0] if is_single else res
+
+        k = len(frame_list)
         output_frames = []
 
         # Sample augmentation parameters ONCE per window (consistent across frames)
         crop_params = None
         if self.random_crop and random.random() < 0.5:
-            crop_params = self._get_crop_params(frames[0])
+            crop_params = self._get_crop_params(frame_list[0])
 
         color_params = self._get_color_jitter_params()
         do_jpeg = self.jpeg_noise and random.random() < 0.3
@@ -124,7 +131,7 @@ class ScreenshotAugmentation:
             for idx in drop_indices:
                 keep_mask[idx] = False
 
-        for i, frame in enumerate(frames):
+        for i, frame in enumerate(frame_list):
             # Skip dropped frames (replace with neighbor)
             if not keep_mask[i]:
                 # Find nearest kept frame
@@ -140,7 +147,7 @@ class ScreenshotAugmentation:
                 else:
                     src_idx = i
 
-                frame = frames[src_idx]
+                frame = frame_list[src_idx]
 
             # Apply spatial transforms
             img = frame.convert("RGB")
@@ -176,7 +183,7 @@ class ScreenshotAugmentation:
             img_tensor = TF.to_tensor(img)
             output_frames.append(img_tensor)
 
-        return output_frames
+        return output_frames[0] if is_single else output_frames
 
 
 class ValidationAugmentation:
@@ -185,14 +192,21 @@ class ValidationAugmentation:
     def __init__(self, target_resolution: Tuple[int, int] = (224, 224)):
         self.target_resolution = target_resolution
 
-    def __call__(self, frames: List[Image.Image]) -> List[torch.Tensor]:
+    def __call__(
+        self,
+        frames: Union[List[Image.Image], Image.Image],
+    ) -> Union[List[torch.Tensor], torch.Tensor]:
+        is_single = isinstance(frames, Image.Image) or not isinstance(frames, (list, tuple))
+        frame_list = [frames] if is_single else list(frames)
+
         output = []
-        for frame in frames:
+        for frame in frame_list:
             img = frame.convert("RGB")
             img = TF.resize(img, self.target_resolution, interpolation=TF.InterpolationMode.LANCZOS)
             img_tensor = TF.to_tensor(img)
             output.append(img_tensor)
-        return output
+
+        return output[0] if is_single else output
 
 
 import io  # For JPEG compression
