@@ -19,6 +19,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install System Libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1 libglib2.0-0 xvfb
+
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
@@ -34,7 +39,7 @@ jobs:
 
       - name: Run Full Test Suite
         run: |
-          python -m pytest tests/ -v --tb=short
+          xvfb-run -a python -m pytest tests/ -v --tb=short
 
       - name: Generate Research Reports
         run: |
