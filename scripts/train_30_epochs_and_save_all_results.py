@@ -18,6 +18,11 @@ import logging
 from pathlib import Path
 from datetime import datetime
 
+# Ensure project root is in sys.path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -289,7 +294,7 @@ def save_epoch_logs_to_csv_and_json(history: dict, stage_name: str = "stage_b"):
 def run_full_30_epoch_training():
     """Main execution entry point."""
     print("============================================================================")
-    print("🛡️  ARG-VRI / SENTINEL-Vision: 30-Epoch Full Training & Results Pipeline")
+    print("[*] ARG-VRI / SENTINEL-Vision: 30-Epoch Full Training & Results Pipeline")
     print("============================================================================")
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
