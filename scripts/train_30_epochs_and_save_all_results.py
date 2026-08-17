@@ -383,9 +383,18 @@ def run_full_30_epoch_training():
     )
 
     # 3. Execute 30-Epoch Training Loop
+    start_epoch = 1
+    resume_ckpt = Path("checkpoints/stage_b_30epochs/latest.pt")
+    if not resume_ckpt.exists():
+        resume_ckpt = Path("checkpoints/stage_b_30epochs/best.pt")
+
+    if "--resume" in sys.argv and resume_ckpt.exists():
+        start_epoch = trainer.resume_from_checkpoint(str(resume_ckpt))
+        logger.info(f">>> RESUMING TRAINING FROM EPOCH {start_epoch} (using {resume_ckpt}) <<<")
+
     start_train_time = time.time()
-    logger.info(">>> STARTING 30-EPOCH TRAINING RUN <<<")
-    train_results = trainer.train()
+    logger.info(f">>> STARTING 30-EPOCH TRAINING RUN (From Epoch {start_epoch}) <<<")
+    train_results = trainer.train(start_epoch=start_epoch)
     total_train_time = time.time() - start_train_time
     logger.info(f">>> 30-EPOCH TRAINING COMPLETED in {total_train_time/60:.1f} minutes <<<")
 

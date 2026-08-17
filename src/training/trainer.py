@@ -4,16 +4,21 @@ Handles Hydra config, W&B logging, mixed precision, checkpointing, early stoppin
 """
 
 import os
+import shutil
 import time
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from torch.cuda.amp import GradScaler, autocast
 from typing import Dict, Any, Optional, Callable, List, Tuple
 from pathlib import Path
 import logging
 from omegaconf import DictConfig, OmegaConf
 import hydra
+
+try:
+    from torch.amp import GradScaler, autocast
+except ImportError:
+    from torch.cuda.amp import GradScaler, autocast
 
 try:
     import wandb
@@ -74,9 +79,9 @@ class SentinelTrainer:
         self.early_stopping_counter = 0
 
         # Mixed precision
-        device_type = "cuda" if str(device).startswith("cuda") else "cpu"
+        self.device_type = "cuda" if str(device).startswith("cuda") else "cpu"
         try:
-            self.scaler = torch.amp.GradScaler(device_type, enabled=self.mixed_precision)
+            self.scaler = torch.amp.GradScaler(self.device_type, enabled=self.mixed_precision)
         except Exception:
             self.scaler = GradScaler(enabled=self.mixed_precision)
 
@@ -120,14 +125,14 @@ class SentinelTrainer:
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
-    def train(self) -> Dict[str, float]:
+    def train(self, start_epoch: int = 1) -> Dict[str, float]:
         """
         Run full training loop.
         Returns best validation metrics.
         """
-        logger.info(f"Starting training for {self.stage_name}")
+        logger.info(f"Starting training for {self.stage_name} (Epochs {start_epoch} to {self.epochs})")
 
-        for epoch in range(1, self.epochs + 1):
+        for epoch in range(start_epoch, self.epochs + 1):
             self.model.set_epoch(epoch)
 
             # Training epoch
@@ -199,7 +204,12 @@ class SentinelTrainer:
 
             self.optimizer.zero_grad()
 
-            with autocast(enabled=self.mixed_precision):
+            try:
+                autocast_ctx = torch.amp.autocast(self.device_type, enabled=self.mixed_precision)
+            except Exception:
+                autocast_ctx = autocast(enabled=self.mixed_precision)
+
+            with autocast_ctx:
                 predictions = self.model(frames)
                 loss_dict = self.loss_fn(predictions, targets)
                 loss = loss_dict["total_loss"]
@@ -281,7 +291,12 @@ class SentinelTrainer:
                 "has_bbox": batch["has_bbox"],
             }
 
-            with autocast(enabled=self.mixed_precision):
+            try:
+                autocast_ctx = torch.amp.autocast(self.device_type, enabled=self.mixed_precision)
+            except Exception:
+                autocast_ctx = autocast(enabled=self.mixed_precision)
+
+            with autocast_ctx:
                 predictions = self.model(frames)
                 loss_dict = self.loss_fn(predictions, targets)
 
@@ -431,11 +446,17 @@ class SentinelTrainer:
         torch.save(checkpoint, path)
         logger.info(f"Checkpoint saved: {path}")
 
-        # Save latest symlink
+        # Save latest checkpoint
         latest_path = self.checkpoint_dir / "latest.pt"
-        if latest_path.exists():
-            latest_path.unlink()
-        latest_path.symlink_to(path.name)
+        if latest_path.exists() or latest_path.is_symlink():
+            try:
+                latest_path.unlink()
+            except Exception:
+                pass
+        try:
+            latest_path.symlink_to(path.name)
+        except (OSError, NotImplementedError, Exception):
+            shutil.copy2(path, latest_path)
 
     def resume_from_checkpoint(self, checkpoint_path: str):
         """Resume training from checkpoint."""

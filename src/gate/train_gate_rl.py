@@ -3,6 +3,7 @@ PPO Training for SENTINEL-Vision Decision Gate.
 Trains the gate policy using simulated episodes from the dataset.
 """
 
+import shutil
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -312,11 +313,17 @@ class PPOTrainer:
         path = self.checkpoint_dir / f"gate_{self.timesteps}{suffix}.pt"
         torch.save(checkpoint, path)
 
-        # Latest symlink
+        # Latest checkpoint
         latest = self.checkpoint_dir / "latest.pt"
-        if latest.exists():
-            latest.unlink()
-        latest.symlink_to(path.name)
+        if latest.exists() or latest.is_symlink():
+            try:
+                latest.unlink()
+            except Exception:
+                pass
+        try:
+            latest.symlink_to(path.name)
+        except (OSError, NotImplementedError, Exception):
+            shutil.copy2(path, latest)
 
         logger.info(f"Gate checkpoint saved: {path}")
 
