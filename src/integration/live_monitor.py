@@ -1,8 +1,3 @@
-"""
-Live Monitor for SENTINEL-Vision.
-Real-time monitoring of AI agent screens with overlay visualization.
-"""
-
 import asyncio
 import logging
 import time
