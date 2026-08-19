@@ -1,7 +1,3 @@
-"""
-Agent Wrapper for SENTINEL-Vision Integration.
-Wraps AI agent to intercept screenshots and actions, providing oversight via SENTINEL-Vision.
-"""
 
 import asyncio
 import base64
@@ -29,7 +25,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class AgentAction:
     """Represents an action from the AI agent."""
-    action_type: str  # click, type, navigate, scroll, etc.
+    action_type: str  
     selector: Optional[str] = None
     coordinates: Optional[Tuple[int, int]] = None
     text: Optional[str] = None
@@ -75,8 +71,8 @@ class PlaywrightCapture(ScreenshotCapture):
         if self.page:
             screenshot_bytes = await self.page.screenshot(type="png")
             return Image.open(io.BytesIO(screenshot_bytes)).convert("RGB")
-        # Fallback for headless / testing when no active page attached
         return Image.new("RGB", (1920, 1080), color=(128, 128, 128))
+        
 
     async def get_size(self) -> Tuple[int, int]:
         if self.page:
