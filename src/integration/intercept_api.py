@@ -1,9 +1,3 @@
-"""
-Intercept API for SENTINEL-Vision.
-FastAPI-based REST API for programmatic integration with AI agents.
-Provides endpoints for frame submission, action interception, and decision retrieval.
-"""
-
 import asyncio
 import base64
 import io
