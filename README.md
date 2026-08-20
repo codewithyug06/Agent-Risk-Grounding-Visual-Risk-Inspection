@@ -11,11 +11,7 @@
 
   <p><i>A production-grade, model-agnostic computer vision system that monitors autonomous AI agents by observing <b>strictly screen pixels</b>—an external, tamper-proof oversight channel that grounds and inspects visual risk before action execution.</i></p>
 
-  <p>
-    <b>Author:</b> <a href="https://github.com/codewithyug06">Yugendhar Reddy Bommula</a> (CB.AI.U4AID24018)<br>
-    <b>Affiliation:</b> Amrita Vishwa Vidyapeetham, Coimbatore | <b>Intern @</b> Eagle-Hitech Softclou Pvt. Ltd., Chennai<br>
-    <b>Repository:</b> <a href="https://github.com/codewithyug06/Agent-Risk-Grounding-Visual-Risk-Inspection">github.com/codewithyug06/Agent-Risk-Grounding-Visual-Risk-Inspection</a>
-  </p>
+
 </div>
 
 ---
