@@ -1,0 +1,3 @@
+[console_scripts]
+sentinel-guard = src.security_wall.cli:main
+sentinel-wall = src.security_wall.cli:main

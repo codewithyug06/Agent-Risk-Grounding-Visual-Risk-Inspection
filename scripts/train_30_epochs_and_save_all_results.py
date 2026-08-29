@@ -53,7 +53,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("training_execution.log", mode="w", encoding="utf-8"),
+        logging.FileHandler("training_execution.log", mode="a", encoding="utf-8"),
     ],
 )
 logger = logging.getLogger("ARG-VRI-Trainer")
@@ -126,8 +126,8 @@ def get_training_config(epochs: int = 30, batch_size: int = 8, device: str = "cu
             "log_interval": 20,
             "eval_interval": 1,
             "save_interval": 5,
-            "early_stopping_patience": 6,
-            "num_workers": 2 if os.name == "nt" else 4,
+            "early_stopping_patience": 30,
+            "num_workers": 0 if os.name == "nt" else 4,
         },
         "data": {
             "data_dir": "data/processed",
@@ -168,10 +168,10 @@ def generate_visual_prediction_samples(model, val_loader, device, num_samples=8)
             cat_probs = preds["category_probs"].cpu().numpy()
             pred_boxes = preds["bbox"].cpu().numpy()
             
-            gt_risks = batch["risk_label"].numpy().flatten()
-            gt_cats = batch["category_label"].numpy().flatten()
-            gt_boxes = batch["bbox"].numpy()
-            has_boxes = batch["has_bbox"].numpy()
+            gt_risks = (batch["risk_label"].cpu().numpy() if isinstance(batch["risk_label"], torch.Tensor) else np.array(batch["risk_label"])).flatten()
+            gt_cats = (batch["category_label"].cpu().numpy() if isinstance(batch["category_label"], torch.Tensor) else np.array(batch["category_label"])).flatten()
+            gt_boxes = batch["bbox"].cpu().numpy() if isinstance(batch["bbox"], torch.Tensor) else np.array(batch["bbox"])
+            has_boxes = batch["has_bbox"].cpu().numpy() if isinstance(batch["has_bbox"], torch.Tensor) else np.array(batch["has_bbox"])
 
             b_size = frames.size(0)
             for i in range(b_size):
@@ -388,7 +388,8 @@ def run_full_30_epoch_training():
     if not resume_ckpt.exists():
         resume_ckpt = Path("checkpoints/stage_b_30epochs/best.pt")
 
-    if "--resume" in sys.argv and resume_ckpt.exists():
+    should_resume = ("--resume" in sys.argv or resume_ckpt.exists()) and "--scratch" not in sys.argv
+    if should_resume and resume_ckpt.exists():
         start_epoch = trainer.resume_from_checkpoint(str(resume_ckpt))
         logger.info(f">>> RESUMING TRAINING FROM EPOCH {start_epoch} (using {resume_ckpt}) <<<")
 
