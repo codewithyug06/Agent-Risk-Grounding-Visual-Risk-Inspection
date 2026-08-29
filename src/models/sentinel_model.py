@@ -16,6 +16,8 @@ from .frame_encoder import FrameEncoder, create_frame_encoder
 from .temporal_fusion import TemporalFusion, create_temporal_fusion
 from .risk_head import RiskHead, create_risk_head
 from .localization_head import LocalizationHead, create_localization_head
+from ..utils.checkpoint import load_checkpoint, CheckpointLoadError
+from ..utils.constants import CATEGORY_NAMES, DEFAULT_IMAGE_SIZE
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +43,7 @@ class SentinelModel(nn.Module):
         super().__init__()
 
         self.config = config
-        self.image_size = config.get("image_size", 224)
+        self.image_size = config.get("image_size", DEFAULT_IMAGE_SIZE)
         self.k = config.get("frame_window", {}).get("k", 6)
 
         # Build components
@@ -50,14 +52,8 @@ class SentinelModel(nn.Module):
         self.risk_head = create_risk_head(config)
         self.localization_head = create_localization_head(config)
 
-        # Category names
-        self.category_names = [
-            "destructive",
-            "financial",
-            "privacy",
-            "irreversible_external",
-            "benign",
-        ]
+        # Category names (single source of truth: utils/constants.py)
+        self.category_names = CATEGORY_NAMES
 
         # For Grad-CAM target layer (last attention block in temporal fusion)
         self._gradcam_target_layer = None
@@ -240,7 +236,14 @@ class SentinelModel(nn.Module):
                 "objectness": {0: "batch"},
             }
 
-        # Export
+        # Export. dynamo=False pins the legacy TorchScript-tracing exporter.
+        # torch's newer default (dynamo=True, as of the torch version this
+        # was verified against) runs the model through torch.export, which
+        # fails here with a GuardOnDataDependentSymNode error triggered by a
+        # data-dependent list comprehension elsewhere in this model's
+        # forward path -- unrelated to this export call's own logic. The
+        # legacy tracer handles this model correctly; revisit dynamo=True
+        # only alongside fixing the underlying data-dependent control flow.
         torch.onnx.export(
             self,
             dummy_input,
@@ -252,6 +255,7 @@ class SentinelModel(nn.Module):
             output_names=output_names,
             dynamic_axes=dynamic_axes_dict,
             verbose=False,
+            dynamo=False,
         )
 
         logger.info(f"Model exported to ONNX: {output_path}")
@@ -283,7 +287,14 @@ class SentinelModel(nn.Module):
         """
         import os
         import tempfile
-        from onnxruntime.quantization import quantize_dynamic, QuantType
+
+        try:
+            from onnxruntime.quantization import quantize_dynamic, QuantType
+        except ImportError as exc:
+            raise ImportError(
+                "INT8 export requires 'onnxruntime' with quantization support. "
+                "Install it with: pip install onnxruntime>=1.15.0"
+            ) from exc
 
         # First export full precision model to temp file
         temp_fp32 = output_path.replace(".onnx", "_fp32_temp.onnx")
@@ -413,7 +424,15 @@ class SentinelModel(nn.Module):
         Returns:
             Loaded SentinelModel
         """
-        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        try:
+            checkpoint = load_checkpoint(checkpoint_path, map_location="cpu")
+        except CheckpointLoadError:
+            logger.warning(
+                "'%s' failed restricted (weights_only) load; retrying with "
+                "allow_unsafe=True. Only do this for checkpoints you trust.",
+                checkpoint_path,
+            )
+            checkpoint = load_checkpoint(checkpoint_path, map_location="cpu", allow_unsafe=True)
 
         if config is None:
             if "config" in checkpoint:

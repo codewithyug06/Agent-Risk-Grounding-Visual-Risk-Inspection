@@ -48,9 +48,17 @@ notebooks/sample_window.png
 checkpoints/*.pt
 checkpoints/*.pth
 checkpoints/*.onnx
+checkpoints/**/*.pt
+checkpoints/**/*.pth
 !checkpoints/.gitkeep
 !data/processed/.gitkeep
 
 # Local incident logs & runs
 wandb/
 .sentinel_vision/
+
+# Build/packaging artifacts
+*.egg-info/
+onnx_models/
+build/
+dist/

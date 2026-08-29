@@ -18,6 +18,12 @@ from ..gate.decision_gate import DecisionGate, create_decision_gate
 from ..data.frame_windowing import extract_frame_window
 from ..data.augmentation import create_val_transform
 from ..utils.logging import setup_logging
+from ..utils.checkpoint import load_checkpoint, load_model_state_dict, CheckpointLoadError
+from ..utils.constants import (
+    CATEGORY_NAMES,
+    DEFAULT_SENTINEL_CHECKPOINT,
+    DEFAULT_GATE_CHECKPOINT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,11 +74,15 @@ class PlaywrightCapture(ScreenshotCapture):
         self.page = page
 
     async def capture(self) -> Image.Image:
-        if self.page:
-            screenshot_bytes = await self.page.screenshot(type="png")
-            return Image.open(io.BytesIO(screenshot_bytes)).convert("RGB")
-        return Image.new("RGB", (1920, 1080), color=(128, 128, 128))
-        
+        if self.page is None:
+            raise RuntimeError(
+                "PlaywrightCapture has no page attached. A security monitor must "
+                "never silently fall back to a blank frame -- that would report "
+                "'no risk detected' while capturing nothing. Attach a real page "
+                "(PlaywrightCapture(page=...)) or use a test double explicitly."
+            )
+        screenshot_bytes = await self.page.screenshot(type="png")
+        return Image.open(io.BytesIO(screenshot_bytes)).convert("RGB")
 
     async def get_size(self) -> Tuple[int, int]:
         if self.page:
@@ -156,30 +166,89 @@ class SentinelWrapper:
 
         # Load SENTINEL model
         self.sentinel = create_sentinel_model(config)
+        self.sentinel_checkpoint_loaded = False
         if sentinel_checkpoint and Path(sentinel_checkpoint).exists():
             logger.info(f"Loading SENTINEL model from {sentinel_checkpoint}")
-            checkpoint = torch.load(sentinel_checkpoint, map_location=device)
-            self.sentinel.load_state_dict(checkpoint.get("model_state_dict", checkpoint))
+            try:
+                state_dict = load_model_state_dict(sentinel_checkpoint, map_location=device)
+            except CheckpointLoadError:
+                logger.warning(
+                    "'%s' failed restricted (weights_only) load; retrying with allow_unsafe=True "
+                    "because it is a locally-trained checkpoint under checkpoints/.",
+                    sentinel_checkpoint,
+                )
+                state_dict = load_model_state_dict(
+                    sentinel_checkpoint, map_location=device, allow_unsafe=True
+                )
+            try:
+                self.sentinel.load_state_dict(state_dict)
+                self.sentinel_checkpoint_loaded = True
+            except RuntimeError as exc:
+                # The checkpoints currently in checkpoints/ were trained
+                # against an earlier version of the model architecture
+                # (e.g. top-level module name "encoder.*" vs. this code's
+                # "frame_encoder.*", and a different localization_head
+                # structure) and do NOT load into the current SentinelModel
+                # -- confirmed by inspecting stageC_final.pt's state_dict
+                # keys directly. Previously this was an unhandled crash on
+                # construction; now it degrades to a loud warning and an
+                # untrained model, same as the "no checkpoint found" branch
+                # below, instead of taking down the whole wrapper.
+                logger.error(
+                    "Checkpoint '%s' does NOT match the current model architecture "
+                    "(load_state_dict raised: %s). This repo's checkpoints/ files "
+                    "were trained against an older architecture version. Running "
+                    "with randomly-initialized weights -- risk scores will be "
+                    "meaningless until a compatible checkpoint is trained or the "
+                    "architecture is reconciled with the saved checkpoints.",
+                    sentinel_checkpoint,
+                    exc,
+                )
         else:
-            logger.warning(f"No sentinel checkpoint provided or found at '{sentinel_checkpoint}', using initialized model weights.")
+            logger.warning(
+                f"No sentinel checkpoint provided or found at '{sentinel_checkpoint}'. "
+                "Running with randomly-initialized weights -- risk scores will be "
+                "meaningless. This should never happen outside of unit tests."
+            )
         self.sentinel = self.sentinel.to(device).eval()
 
         # Load gate if provided
         self.gate = None
+        self.gate_checkpoint_loaded = False
         if gate_checkpoint and Path(gate_checkpoint).exists():
             logger.info(f"Loading Decision Gate from {gate_checkpoint}")
-            self.gate = create_decision_gate(OmegaConf.to_container(config))
-            gate_ckpt = torch.load(gate_checkpoint, map_location=device)
-            self.gate.load_state_dict(gate_ckpt["model_state_dict"])
-            self.gate = self.gate.to(device).eval()
+            candidate_gate = create_decision_gate(OmegaConf.to_container(config))
+            try:
+                gate_state = load_model_state_dict(gate_checkpoint, map_location=device)
+            except CheckpointLoadError:
+                gate_state = load_model_state_dict(
+                    gate_checkpoint, map_location=device, allow_unsafe=True
+                )
+            try:
+                candidate_gate.load_state_dict(gate_state)
+                self.gate = candidate_gate.to(device).eval()
+                self.gate_checkpoint_loaded = True
+            except RuntimeError as exc:
+                # checkpoints/gate_rl.pt (confirmed by inspecting its keys:
+                # just "fc1"/"fc2", a bare 2-layer MLP) does not match the
+                # current DecisionGate's policy_net/value_net architecture
+                # either. Fall back to the threshold-based decision path
+                # (self.gate stays None) instead of crashing on construction.
+                logger.error(
+                    "Gate checkpoint '%s' does NOT match the current DecisionGate "
+                    "architecture (load_state_dict raised: %s). Falling back to "
+                    "threshold-based decisions instead of the PPO gate.",
+                    gate_checkpoint,
+                    exc,
+                )
         else:
             logger.warning("No gate checkpoint provided, using threshold-based decisions")
 
         # Transform
         self.transform = create_val_transform(OmegaConf.to_container(config))
 
-        # Category names
-        self.categories = ["destructive", "financial", "privacy", "irreversible_external", "benign"]
+        # Category names (single source of truth: utils/constants.py)
+        self.categories = CATEGORY_NAMES
 
         # Statistics
         self.stats = {
@@ -194,6 +263,10 @@ class SentinelWrapper:
         # Callbacks
         self.on_decision: Optional[Callable[[SentinelDecision, AgentAction], None]] = None
         self.on_block: Optional[Callable[[SentinelDecision, AgentAction], bool]] = None  # Return True to override block
+        # Called for PAUSE decisions. Must return True to let the action proceed.
+        # Default (None) is fail-safe: PAUSE blocks unless a human/consumer
+        # explicitly wires up a confirmation handler.
+        self.on_pause: Optional[Callable[[SentinelDecision, AgentAction], bool]] = None
 
         logger.info("SentinelWrapper initialized")
 
@@ -316,13 +389,25 @@ class SentinelWrapper:
             parts.append(f"Coordinates: {action.coordinates}")
         return " | ".join(parts)
 
-    def intercept_action(self, action: AgentAction) -> Tuple[SentinelDecision, bool]:
+    def intercept_action(self, action: AgentAction, auto_capture: bool = True) -> Tuple[SentinelDecision, bool]:
         """
         Intercept an agent action. Returns (decision, should_proceed).
         should_proceed=False means action should be blocked.
+
+        Args:
+            auto_capture: If True (default), pulls a fresh frame from
+                `self.capture` before predicting -- the right behavior for a
+                caller that has no other way to get a screenshot (e.g. a
+                Playwright-driven agent wrapper). Set False when the caller
+                already pushed the current frame via `add_frame()` itself
+                (e.g. `SentinelSecurityWall.monitor_action`, which receives
+                the frame directly and previously triggered a redundant
+                second capture here -- silently falling back to a blank
+                frame from the default no-page PlaywrightCapture before this
+                was fixed to fail loudly instead).
         """
-        # Capture current screen
-        self.add_frame()
+        if auto_capture:
+            self.add_frame()
 
         # Predict
         prediction = self.predict()
@@ -335,37 +420,45 @@ class SentinelWrapper:
             self.on_decision(decision, action)
 
         # Determine if action should proceed
-        should_proceed = True
-        if decision.action == "HARD_BLOCK":
-            should_proceed = False
-            if self.on_block:
-                # Allow override
-                should_proceed = self.on_block(decision, action)
-        elif decision.action == "PAUSE":
-            # In PAUSE mode, wait for human confirmation
-            # For now, proceed but log warning
-            logger.warning(f"PAUSE: {decision.reasoning}")
-
+        should_proceed = self._resolve_should_proceed(decision, action)
         return decision, should_proceed
 
-    async def intercept_action_async(self, action: AgentAction) -> Tuple[SentinelDecision, bool]:
-        """Async version of intercept_action."""
-        await self.add_frame_async()
+    async def intercept_action_async(self, action: AgentAction, auto_capture: bool = True) -> Tuple[SentinelDecision, bool]:
+        """Async version of intercept_action. See `auto_capture` on that method."""
+        if auto_capture:
+            await self.add_frame_async()
         prediction = self.predict()
         decision = self.decide(prediction, action)
 
         if self.on_decision:
             self.on_decision(decision, action)
 
-        should_proceed = True
+        should_proceed = self._resolve_should_proceed(decision, action)
+        return decision, should_proceed
+
+    def _resolve_should_proceed(self, decision: SentinelDecision, action: AgentAction) -> bool:
+        """
+        Converts a gate decision into a proceed/block boolean.
+
+        HARD_BLOCK: blocked unless on_block explicitly overrides.
+        PAUSE: blocked by default (fail-safe) unless on_pause explicitly
+        confirms. This used to log-and-proceed, which silently defeated the
+        entire point of a PAUSE tier -- fixed so PAUSE actually pauses.
+        """
         if decision.action == "HARD_BLOCK":
-            should_proceed = False
             if self.on_block:
-                should_proceed = self.on_block(decision, action)
+                return self.on_block(decision, action)
+            return False
         elif decision.action == "PAUSE":
             logger.warning(f"PAUSE: {decision.reasoning}")
-
-        return decision, should_proceed
+            if self.on_pause:
+                return self.on_pause(decision, action)
+            logger.warning(
+                "No on_pause handler registered -- blocking by default. "
+                "Register SentinelWrapper.on_pause to allow human confirmation."
+            )
+            return False
+        return True
 
     def get_stats(self) -> Dict[str, Any]:
         """Get wrapper statistics."""
@@ -435,8 +528,8 @@ class AgentWrapper:
 
 def create_sentinel_wrapper(
     config,
-    sentinel_checkpoint: str = "checkpoints/stage_c/best.pt",
-    gate_checkpoint: Optional[str] = "checkpoints/gate/latest.pt",
+    sentinel_checkpoint: str = DEFAULT_SENTINEL_CHECKPOINT,
+    gate_checkpoint: Optional[str] = DEFAULT_GATE_CHECKPOINT,
     device: str = "cuda",
     frame_buffer_size: int = 6,
     target_resolution: Tuple[int, int] = (224, 224),

@@ -155,9 +155,13 @@ class TestEndToEndPipeline:
             frame = Image.fromarray((np.random.rand(224, 224, 3) * 255).astype(np.uint8))
             wrapper.add_frame(frame)
 
-        # Intercept
+        # Intercept. auto_capture=False: frames were already pushed above via
+        # add_frame() -- intercept_action must not additionally pull from
+        # wrapper.capture, which is an unconfigured PlaywrightCapture() here
+        # and correctly raises rather than silently using a blank frame
+        # (see PlaywrightCapture.capture's no-page guard).
         action = AgentAction(action_type="click", selector="#delete")
-        decision, should_proceed = wrapper.intercept_action(action)
+        decision, should_proceed = wrapper.intercept_action(action, auto_capture=False)
 
         assert isinstance(decision, SentinelDecision)
         assert isinstance(should_proceed, bool)

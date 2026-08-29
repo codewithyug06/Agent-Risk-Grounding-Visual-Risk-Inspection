@@ -2,6 +2,18 @@ backbone: "vit_small_patch16_224"
 pretrained: true
 freeze_backbone_epochs: 3
 
+# Previously undeclared -- SentinelModel/FrameEncoder/TemporalFusion/RiskHead/
+# LocalizationHead factories all read config.get("embed_dim", 384), which
+# happens to be correct for vit_small_patch16_224 (whose real embed_dim IS
+# 384) but was masking the fact that nothing here actually pinned it to the
+# backbone. See model_base.yaml for the case where this silent default is
+# actually wrong.
+embed_dim: 384
+image_size: 224
+frame_window:
+  k: 6
+  resolution: [224, 224]
+
 temporal:
   num_heads: 8
   num_layers: 3
@@ -16,6 +28,22 @@ localization:
   anchor_sizes: [32, 64, 128, 256]
   num_anchors: 9
   iou_threshold: 0.5
+
+# Previously undeclared here -- src/training/losses.py's create_loss_function()
+# silently fell back to these exact hardcoded defaults for every run since no
+# config file defined a `loss:` section. Values are unchanged; this just makes
+# them visible/overridable instead of implicit.
+loss:
+  risk_weight: 2.0
+  category_weight: 1.0
+  localization_weight: 1.5
+  harmful_class_weight: 5.0
+  category_class_weights: [3.0, 3.0, 3.0, 3.0, 1.0]
+  use_focal_loss: true
+  focal_alpha: 0.75
+  focal_gamma: 2.0
+  giou_weight: 1.0
+  l1_weight: 0.5
 
 training:
   batch_size: 16

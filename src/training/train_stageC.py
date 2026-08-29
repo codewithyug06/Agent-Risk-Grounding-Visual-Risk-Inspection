@@ -24,6 +24,7 @@ from ..training.trainer import (
 from ..training.losses import create_loss_function
 from ..utils.logging import setup_logging
 from ..utils.config import load_config
+from ..utils.checkpoint import load_checkpoint, CheckpointLoadError
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +52,15 @@ def train_stage_c(config: DictConfig) -> DictConfig:
     device = config.get("device", "cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
 
-    # Load Stage B checkpoint
-    stage_b_checkpoint = config.get("stage_b_checkpoint", "checkpoints/stage_b/best.pt")
+    # Load Stage B checkpoint. Prefer the actual file present in this repo's
+    # checkpoints/ (stage_b_30epochs/best.pt) over the stale
+    # checkpoints/stage_b/best.pt default that doesn't exist on disk.
+    default_stage_b = (
+        "checkpoints/stage_b_30epochs/best.pt"
+        if Path("checkpoints/stage_b_30epochs/best.pt").exists()
+        else "checkpoints/stage_b/best.pt"
+    )
+    stage_b_checkpoint = config.get("stage_b_checkpoint", default_stage_b)
     logger.info(f"Loading Stage B checkpoint: {stage_b_checkpoint}")
 
     # Hard example mining from Stage B
@@ -67,8 +75,24 @@ def train_stage_c(config: DictConfig) -> DictConfig:
         )
         logger.info(f"Mined {len(hard_examples)} hard examples")
 
-        # Add hard examples to training data (handled by dataset)
+        # KNOWN GAP (found during a hardening pass, not fixed here): nothing
+        # downstream reads config.hard_examples. SentinelDataset has no
+        # hard-example oversampling path, so mine_hard_examples() currently
+        # runs, logs a count, and has zero effect on the actual training
+        # loop below. Wiring this up properly also isn't a one-line fix:
+        # mining runs against the *val* split (see mine_hard_examples above)
+        # while the training loop samples from `train_dataset` -- a
+        # WeightedRandomSampler would need hard examples mined from the
+        # *train* split with indices that correspond to train_dataset's
+        # ordering, not val_dataset's. Left as a documented gap rather than
+        # a silent no-op or an unverified structural change.
         config.hard_examples = hard_examples
+        logger.warning(
+            "Hard example mining ran but is NOT wired into training -- "
+            "SentinelDataset/create_data_loaders do not consume "
+            "config.hard_examples. This stage currently trains as plain "
+            "uniform sampling over train_dataset regardless of this flag."
+        )
 
     # Create datasets
     logger.info("Loading datasets...")
@@ -98,8 +122,24 @@ def train_stage_c(config: DictConfig) -> DictConfig:
     model = create_sentinel_model(config)
     model = model.to(device)
 
-    checkpoint = torch.load(stage_b_checkpoint, map_location=device)
-    model.load_state_dict(checkpoint["model_state_dict"], strict=False)
+    try:
+        checkpoint = load_checkpoint(stage_b_checkpoint, map_location=device)
+    except CheckpointLoadError:
+        checkpoint = load_checkpoint(stage_b_checkpoint, map_location=device, allow_unsafe=True)
+    # NOTE: strict=False silently ignores missing/unexpected keys -- if the
+    # architecture drifted between Stage B and Stage C (e.g. a changed head
+    # shape), this will partially load rather than error. Left as-is here
+    # (changing to strict=True is a behavior change that needs a real
+    # training run to validate, which this environment cannot do), but
+    # flagged: log which keys actually mismatched so a bad partial-load
+    # isn't silent.
+    load_result = model.load_state_dict(checkpoint["model_state_dict"], strict=False)
+    if load_result.missing_keys or load_result.unexpected_keys:
+        logger.warning(
+            "Stage B -> Stage C checkpoint load was partial. missing_keys=%s unexpected_keys=%s",
+            load_result.missing_keys,
+            load_result.unexpected_keys,
+        )
     logger.info("Stage B weights loaded")
 
     # Full unfreeze for Stage C
@@ -157,7 +197,10 @@ def mine_hard_examples(
     # Load Stage B model
     model = create_sentinel_model(config)
     model = model.to(device)
-    checkpoint = torch.load(stage_b_checkpoint, map_location=device)
+    try:
+        checkpoint = load_checkpoint(stage_b_checkpoint, map_location=device)
+    except CheckpointLoadError:
+        checkpoint = load_checkpoint(stage_b_checkpoint, map_location=device, allow_unsafe=True)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
 

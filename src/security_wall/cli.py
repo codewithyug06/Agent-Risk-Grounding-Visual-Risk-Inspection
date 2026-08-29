@@ -6,6 +6,7 @@ Usage:
     sentinel-wall demo        # Run simulated agent interception demo
 """
 
+import signal
 import sys
 import os
 import argparse
@@ -18,6 +19,55 @@ from .desktop_wall import SentinelSecurityWall
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("SentinelWall")
+
+
+def _notify(title: str, message: str) -> None:
+    """Best-effort desktop toast notification. Never fatal if unavailable
+    (e.g. plyer not installed, or running headless in CI)."""
+    try:
+        from plyer import notification
+
+        notification.notify(title=title, message=message, app_name="SENTINEL-Vision", timeout=6)
+    except Exception as exc:
+        logger.debug("Desktop notification unavailable: %s", exc)
+
+
+def run_start(device: str = "cpu"):
+    """Real always-on background monitoring loop (system-tray-less console
+    mode). Watches the desktop screen continuously and blocks/reports
+    HARD_BLOCK/PAUSE decisions until interrupted (Ctrl+C)."""
+    print("=================================================================")
+    print("[*] SENTINEL-Vision: Background Security Wall -- ACTIVE")
+    print("    Watching desktop screen. Press Ctrl+C to stop.")
+    print("=================================================================")
+
+    wall = SentinelSecurityWall(device=device)
+    stop_requested = {"flag": False}
+
+    def _handle_sigint(signum, frame):
+        stop_requested["flag"] = True
+        wall.stop()
+
+    signal.signal(signal.SIGINT, _handle_sigint)
+
+    def on_tick(decision):
+        if decision.action in ("HARD_BLOCK", "PAUSE"):
+            print(
+                f"[!] {decision.action} risk={decision.risk_score:.2%} "
+                f"category={decision.category} -- {decision.reasoning}"
+            )
+            _notify(
+                f"SENTINEL-Vision: {decision.action}",
+                f"{decision.category.upper()} risk detected ({decision.risk_score:.0%})",
+            )
+
+    try:
+        wall.run_forever(on_tick=on_tick)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        print("\n[+] Security Wall stopped. Incident log:")
+        print(f"    {wall.get_audit_dashboard()}")
 
 
 def run_demo():
@@ -60,6 +110,7 @@ def run_demo():
 def main():
     parser = argparse.ArgumentParser(description="SENTINEL-Vision Visual Security Wall CLI")
     parser.add_argument("command", choices=["start", "dashboard", "demo"], help="Command to execute")
+    parser.add_argument("--device", default="cpu", help="Inference device for 'start' (cpu or cuda)")
 
     args = parser.parse_args()
 
@@ -71,8 +122,7 @@ def main():
         print(f"Opening Security Audit Dashboard: {dashboard_path}")
         webbrowser.open(f"file:///{dashboard_path}")
     elif args.command == "start":
-        print("Starting SENTINEL-Vision Security Wall in background monitoring mode...")
-        run_demo()
+        run_start(device=args.device)
 
 
 if __name__ == "__main__":

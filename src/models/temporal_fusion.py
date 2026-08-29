@@ -31,6 +31,15 @@ class TemporalPositionalEncoding(nn.Module):
             x with temporal positional encoding added
         """
         k = x.shape[1]
+        if k > self.max_frames:
+            raise ValueError(
+                f"TemporalPositionalEncoding was built for at most "
+                f"max_frames={self.max_frames} but received a window of "
+                f"k={k} frames. This used to silently index past the end of "
+                "a fixed-size positional-embedding buffer (undefined slicing "
+                "behavior, not a clean error) -- pass a frame window no "
+                "longer than max_frames, or rebuild with a larger max_frames."
+            )
         return x + self.pos_embedding[:, :k, :, :]
 
 

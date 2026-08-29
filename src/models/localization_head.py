@@ -31,6 +31,8 @@ class LocalizationHead(nn.Module):
         num_classes: int = 1,  # Objectness only
         feature_stride: int = 16,
         image_size: int = 224,
+        aspect_ratios: List[float] = [0.5, 1.0, 2.0],
+        anchor_scales: Optional[List[float]] = None,
     ):
         """
         Args:
@@ -40,6 +42,8 @@ class LocalizationHead(nn.Module):
             num_classes: Number of classes (1 for objectness)
             feature_stride: Stride of feature map relative to input image
             image_size: Input image size
+            aspect_ratios: Anchor width/height ratios
+            anchor_scales: Anchor scale multipliers (default: 3 scales spanning 2^0..2^(2/3))
         """
         super().__init__()
 
@@ -49,6 +53,8 @@ class LocalizationHead(nn.Module):
         self.num_classes = num_classes
         self.feature_stride = feature_stride
         self.image_size = image_size
+        self.aspect_ratios = aspect_ratios
+        self.anchor_scales = anchor_scales or [2 ** 0, 2 ** (1 / 3), 2 ** (2 / 3)]
 
         # Feature map size
         self.fm_size = image_size // feature_stride  # 14 for 224/16
@@ -99,13 +105,9 @@ class LocalizationHead(nn.Module):
         fm_size = self.fm_size
         stride = self.feature_stride
 
-        # Aspect ratios for anchors
-        aspect_ratios = [0.5, 1.0, 2.0]  # 3 aspect ratios
-        scales = [2**0, 2**(1/3), 2**(2/3)]  # 3 scales
-
         for base_size in self.anchor_sizes:
-            for scale in scales:
-                for ar in aspect_ratios:
+            for scale in self.anchor_scales:
+                for ar in self.aspect_ratios:
                     w = base_size * scale * np.sqrt(ar)
                     h = base_size * scale / np.sqrt(ar)
                     anchors.append([w, h])
@@ -322,43 +324,39 @@ class LocalizationHead(nn.Module):
             pred_bbox = pred_bbox.unsqueeze(1)
             gt_bbox = gt_bbox.unsqueeze(1)
 
-        B, N, _ = pred_bbox.shape
-        loss = torch.zeros(B, N, device=pred_bbox.device)
+        # Vectorized over (B, N) -- this used to be a Python-level double
+        # for-loop, which is the dominant cost in a training step and
+        # directly undercuts the <50ms real-time latency claim. The
+        # equivalent vectorized GIoU is already implemented once in
+        # src/training/losses.py; this duplicate now matches it instead of
+        # diverging (two implementations of the same math is itself a
+        # source of bugs).
+        p, t = pred_bbox, gt_bbox  # (B, N, 4)
 
-        for b in range(B):
-            for n in range(N):
-                p = pred_bbox[b, n]
-                t = gt_bbox[b, n]
+        x1_i = torch.maximum(p[..., 0], t[..., 0])
+        y1_i = torch.maximum(p[..., 1], t[..., 1])
+        x2_i = torch.minimum(p[..., 2], t[..., 2])
+        y2_i = torch.minimum(p[..., 3], t[..., 3])
 
-                # Intersection
-                x1_i = torch.max(p[0], t[0])
-                y1_i = torch.max(p[1], t[1])
-                x2_i = torch.min(p[2], t[2])
-                y2_i = torch.min(p[3], t[3])
+        inter_w = (x2_i - x1_i).clamp(min=0)
+        inter_h = (y2_i - y1_i).clamp(min=0)
+        inter_area = inter_w * inter_h
 
-                inter_w = torch.clamp(x2_i - x1_i, min=0)
-                inter_h = torch.clamp(y2_i - y1_i, min=0)
-                inter_area = inter_w * inter_h
+        area_p = (p[..., 2] - p[..., 0]) * (p[..., 3] - p[..., 1])
+        area_t = (t[..., 2] - t[..., 0]) * (t[..., 3] - t[..., 1])
+        union_area = area_p + area_t - inter_area
 
-                # Union
-                area_p = (p[2] - p[0]) * (p[3] - p[1])
-                area_t = (t[2] - t[0]) * (t[3] - t[1])
-                union_area = area_p + area_t - inter_area
+        iou = inter_area / (union_area + 1e-8)
 
-                iou = inter_area / (union_area + 1e-8)
+        x1_c = torch.minimum(p[..., 0], t[..., 0])
+        y1_c = torch.minimum(p[..., 1], t[..., 1])
+        x2_c = torch.maximum(p[..., 2], t[..., 2])
+        y2_c = torch.maximum(p[..., 3], t[..., 3])
 
-                # Enclosing box
-                x1_c = torch.min(p[0], t[0])
-                y1_c = torch.min(p[1], t[1])
-                x2_c = torch.max(p[2], t[2])
-                y2_c = torch.max(p[3], t[3])
+        c_area = (x2_c - x1_c) * (y2_c - y1_c) + 1e-8
 
-                c_w = x2_c - x1_c
-                c_h = y2_c - y1_c
-                c_area = c_w * c_h + 1e-8
-
-                giou = iou - (c_area - union_area) / c_area
-                loss[b, n] = 1.0 - giou
+        giou = iou - (c_area - union_area) / c_area
+        loss = 1.0 - giou  # (B, N)
 
         if reduction == "mean":
             return loss.mean()
@@ -411,7 +409,10 @@ class LocalizationHead(nn.Module):
             bboxes = bboxes / self.image_size
             bboxes = bboxes.clamp(0, 1)
 
-            # NMS (simple implementation)
+            # NMS: the "pick highest, suppress overlapping, repeat" outer
+            # loop is inherently sequential, but each round's IoU-against-
+            # all-remaining-boxes computation is now vectorized (was a
+            # Python for-loop calling ._bbox_iou() once per candidate).
             indices = torch.argsort(scores, descending=True)
             keep_indices = []
 
@@ -422,12 +423,9 @@ class LocalizationHead(nn.Module):
                 if len(indices) == 1:
                     break
 
-                # Compute IoU with remaining
-                ious = torch.zeros(len(indices) - 1, device=scores.device)
-                for j, idx in enumerate(indices[1:]):
-                    ious[j] = self._bbox_iou(bboxes[i], bboxes[idx])
-
-                indices = indices[1:][ious < nms_threshold]
+                rest = indices[1:]
+                ious = self._bbox_iou_batch(bboxes[i], bboxes[rest])
+                indices = rest[ious < nms_threshold]
 
             final_bboxes = bboxes[keep_indices]
             final_scores = scores[keep_indices]
@@ -441,20 +439,24 @@ class LocalizationHead(nn.Module):
 
     def _bbox_iou(self, box1: torch.Tensor, box2: torch.Tensor) -> float:
         """Compute IoU between two normalized boxes."""
-        x1_i = max(box1[0].item(), box2[0].item())
-        y1_i = max(box1[1].item(), box2[1].item())
-        x2_i = min(box1[2].item(), box2[2].item())
-        y2_i = min(box1[3].item(), box2[3].item())
+        return self._bbox_iou_batch(box1, box2.unsqueeze(0)).item()
 
-        if x2_i <= x1_i or y2_i <= y1_i:
-            return 0.0
+    def _bbox_iou_batch(self, box: torch.Tensor, boxes: torch.Tensor) -> torch.Tensor:
+        """IoU between one box (4,) and a batch of boxes (N, 4)."""
+        x1_i = torch.maximum(box[0], boxes[:, 0])
+        y1_i = torch.maximum(box[1], boxes[:, 1])
+        x2_i = torch.minimum(box[2], boxes[:, 2])
+        y2_i = torch.minimum(box[3], boxes[:, 3])
 
-        inter = (x2_i - x1_i) * (y2_i - y1_i)
-        area1 = (box1[2] - box1[0]).item() * (box1[3] - box1[1]).item()
-        area2 = (box2[2] - box2[0]).item() * (box2[3] - box2[1]).item()
+        inter_w = (x2_i - x1_i).clamp(min=0)
+        inter_h = (y2_i - y1_i).clamp(min=0)
+        inter = inter_w * inter_h
+
+        area1 = (box[2] - box[0]) * (box[3] - box[1])
+        area2 = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
         union = area1 + area2 - inter
 
-        return inter / union if union > 0 else 0.0
+        return torch.where(union > 0, inter / union, torch.zeros_like(union))
 
 
 def create_localization_head(config: Dict) -> LocalizationHead:
@@ -466,4 +468,6 @@ def create_localization_head(config: Dict) -> LocalizationHead:
         num_anchors=loc_config.get("num_anchors", 9),
         feature_stride=loc_config.get("feature_stride", 16),
         image_size=config.get("image_size", 224),
+        aspect_ratios=loc_config.get("aspect_ratios", [0.5, 1.0, 2.0]),
+        anchor_scales=loc_config.get("anchor_scales", None),
     )

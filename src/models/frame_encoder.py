@@ -10,6 +10,8 @@ import timm
 from typing import Dict, Tuple, Optional, List
 import logging
 
+from ..utils.constants import DEFAULT_IMAGE_SIZE
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,6 +34,7 @@ class FrameEncoder(nn.Module):
         freeze_backbone: bool = False,
         freeze_epochs: int = 0,
         output_dim: Optional[int] = None,
+        image_size: int = DEFAULT_IMAGE_SIZE,
     ):
         """
         Args:
@@ -40,6 +43,9 @@ class FrameEncoder(nn.Module):
             freeze_backbone: Initially freeze backbone weights
             freeze_epochs: Number of epochs to keep frozen (0 = never freeze)
             output_dim: Project embeddings to this dimension (None = keep backbone dim)
+            image_size: Expected square input resolution (was hardcoded to
+                224 inside _init_backbone_info regardless of what the caller
+                actually passed in).
         """
         super().__init__()
 
@@ -47,6 +53,7 @@ class FrameEncoder(nn.Module):
         self.freeze_backbone = freeze_backbone
         self.freeze_epochs = freeze_epochs
         self.current_epoch = 0
+        self.image_size = image_size
 
         # Create backbone
         self.backbone = timm.create_model(
@@ -89,34 +96,43 @@ class FrameEncoder(nn.Module):
 
             self.patch_size = patch_size
 
-            # For 224x224 input
-            self.patch_grid = (224 // patch_size, 224 // patch_size)
+            self.patch_grid = (self.image_size // patch_size, self.image_size // patch_size)
             self.num_patches = self.patch_grid[0] * self.patch_grid[1]
 
-            # Embedding dimension
+            # Embedding dimension. If neither attribute is present, this is
+            # an unrecognized/unsupported backbone -- fail loudly instead of
+            # silently guessing 384, which would produce a model whose
+            # dimensions don't match its actual output and fail (or worse,
+            # subtly misbehave) much later at a confusing call site.
             if hasattr(self.backbone, "embed_dim"):
                 self.embed_dim = self.backbone.embed_dim
             elif hasattr(self.backbone, "num_features"):
                 self.embed_dim = self.backbone.num_features
             else:
-                self.embed_dim = 384  # ViT-S default
+                raise ValueError(
+                    f"Cannot determine embed_dim for ViT backbone '{self.backbone_name}': "
+                    "it exposes neither .embed_dim nor .num_features. Add explicit "
+                    "handling for this backbone instead of silently guessing."
+                )
 
         elif "convnext" in self.backbone_name.lower():
             # ConvNeXt
             self.is_vit = False
             # ConvNeXt feature map is 1/32 of input
             self.patch_size = 32
-            self.patch_grid = (7, 7)  # 224/32 = 7
-            self.num_patches = 49
+            grid = self.image_size // self.patch_size
+            self.patch_grid = (grid, grid)
+            self.num_patches = grid * grid
             self.embed_dim = self.backbone.num_features  # 768 for tiny
 
         else:
-            # Generic fallback
-            self.is_vit = False
-            self.patch_size = 16
-            self.patch_grid = (14, 14)
-            self.num_patches = 196
-            self.embed_dim = 384
+            raise ValueError(
+                f"Unsupported backbone '{self.backbone_name}': FrameEncoder only "
+                "recognizes ViT-family ('vit'/'dino' in the name) and 'convnext' "
+                "backbones. A silent generic fallback here previously guessed "
+                "patch_grid=(14,14)/embed_dim=384 for ANY unrecognized backbone, "
+                "which would produce wrong dimensions for anything else."
+            )
 
     def _freeze_backbone(self):
         """Freeze backbone parameters."""
@@ -156,6 +172,20 @@ class FrameEncoder(nn.Module):
         else:
             B = x.shape[0]
             k = 1
+            C, H, W = x.shape[1:]
+
+        if C != 3:
+            raise ValueError(
+                f"FrameEncoder expects 3-channel RGB input, got {C} channels. "
+                "This is a pixels-only oversight system -- a wrong channel "
+                "count usually means the caller passed a non-image tensor."
+            )
+        if (H, W) != (self.image_size, self.image_size):
+            raise ValueError(
+                f"FrameEncoder was built for {self.image_size}x{self.image_size} "
+                f"input but got {H}x{W}. Resize frames to the configured "
+                "image_size before calling forward()."
+            )
 
         # Extract features
         if self.is_vit:
@@ -352,4 +382,5 @@ def create_frame_encoder(config: Dict) -> FrameEncoder:
         freeze_backbone=config.get("freeze_backbone", False),
         freeze_epochs=config.get("freeze_backbone_epochs", 3),
         output_dim=config.get("output_dim", None),
+        image_size=config.get("image_size", DEFAULT_IMAGE_SIZE),
     )

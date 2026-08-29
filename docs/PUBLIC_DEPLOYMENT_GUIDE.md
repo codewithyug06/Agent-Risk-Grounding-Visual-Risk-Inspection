@@ -36,6 +36,19 @@ Test the firewall against a simulated agent attempting a dangerous financial ope
 sentinel-wall demo
 ```
 
+### Step 2b: Run Continuous Background Monitoring
+`sentinel-wall start` now actually watches your desktop screen continuously
+(previously this command silently re-ran the one-shot demo instead of
+monitoring anything -- fixed). It captures the primary monitor at ~3 FPS,
+runs a risk decision on every frame, and shows a desktop toast plus an
+incident-log entry on any PAUSE/HARD_BLOCK. Stop it with Ctrl+C.
+```bash
+sentinel-wall start
+```
+If no trained checkpoint is found, this now prints an explicit warning
+instead of silently running an untrained model and reporting meaningless
+risk scores.
+
 ### Step 3: Open the Security Audit Dashboard
 View the visual incident history and evidence screenshots:
 ```bash
@@ -112,3 +125,39 @@ Response:
 - **Incident Reports Directory**: `~/.sentinel_vision/incidents/`
 - **Dashboard**: `~/.sentinel_vision/incidents/security_dashboard.html`
 - **Audit Format**: Every blocked event saves high-resolution annotated screenshots with red bounding boxes and Grad-CAM risk heatmaps.
+
+## ⚠️ Known Limitations (accurate as of this hardening pass)
+- **The checkpoints in `checkpoints/` do not match the current model code
+  and will not load.** Verified directly: `checkpoints/stageC_final.pt`'s
+  state_dict has top-level module names like `encoder.backbone.*` and a
+  simple conv-based localization head (`shared_conv`/`heatmap_conv`/
+  `bbox_conv`), while the current `SentinelModel` uses `frame_encoder.*` and
+  an anchor-based localization head (`feature_processor`/`objectness_head`/
+  `bbox_head`). Same story for `checkpoints/gate_rl.pt` (a bare 2-layer
+  `fc1`/`fc2` MLP) vs. the current `DecisionGate`'s `policy_net`/
+  `value_net`. **This means `sentinel-wall demo`/`dashboard`/`start` all
+  currently run on a randomly-initialized, untrained model** -- they log a
+  clear error and degrade gracefully (fixed: this used to be an unhandled
+  crash) rather than silently pretending the checkpoint loaded, but the
+  risk scores you'll see are not meaningful until either a compatible
+  checkpoint is trained against the current architecture, or the
+  architecture is reverted/adapted to match these older checkpoints.
+- **PAUSE now actually pauses.** Previously the wrapper logged a PAUSE
+  decision and let the action proceed anyway. It now blocks by default
+  unless you register an `on_pause` confirmation callback on
+  `SentinelWrapper` (see `src/integration/agent_wrapper.py`).
+- **Config schema drift**: `src/security_wall/desktop_wall.py` builds an
+  inline model config that does not match the key layout in
+  `configs/model_small.yaml`/`model_base.yaml` (e.g. `temporal_fusion` vs.
+  `temporal`, `frame_window.k` vs. no such key). `SentinelModel` expects the
+  inline schema; the YAML configs need to be migrated to match before they
+  can be used interchangeably with the desktop wall. This was found during
+  the hardening pass and is not yet fixed -- do not assume
+  `model_small.yaml` and `SentinelSecurityWall`'s default config are
+  equivalent.
+- **Extension requires the local gateway.** The browser extension (see
+  `extension/`) is a thin client of `src/integration/intercept_api.py` -- it
+  cannot detect risk on its own and does nothing useful unless the gateway
+  is running locally.
+- **No code-signed installer.** The desktop `.exe` build (via PyInstaller)
+  is unsigned; Windows SmartScreen may warn on first run.

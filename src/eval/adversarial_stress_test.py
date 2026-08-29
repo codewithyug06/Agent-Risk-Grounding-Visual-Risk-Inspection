@@ -23,6 +23,15 @@ from copy import deepcopy
 from ..models.sentinel_model import create_sentinel_model
 from ..data.loaders import SentinelDataset
 from ..data.augmentation import create_val_transform
+from ..utils.checkpoint import load_model_state_dict, CheckpointLoadError
+from ..utils.constants import DEFAULT_SENTINEL_CHECKPOINT, DEFAULT_GATE_CHECKPOINT
+
+
+def _load_state_dict_safe(path, device):
+    try:
+        return load_model_state_dict(path, map_location=device)
+    except CheckpointLoadError:
+        return load_model_state_dict(path, map_location=device, allow_unsafe=True)
 from ..data.frame_windowing import collate_frame_windows
 from ..gate.decision_gate import DecisionGate
 from .metrics import compute_safety_metrics, compute_latency
@@ -125,11 +134,19 @@ class AdversarialAttacker:
         safety = compute_safety_metrics(all_scores, all_labels)
         results["sudden_harmful_action"] = safety
 
-        # Strategy: Interleave benign frames
+        # Strategy: interleave benign-looking (first-frame) context at every
+        # other timestep, keeping the real harmful frame at the end. This
+        # previously returned `frames` unmodified (a documented no-op),
+        # which made "interleaved_benign" silently identical to whatever
+        # baseline it was compared against -- now it actually perturbs the
+        # sequence, testing whether alternating real signal with static
+        # benign frames degrades detection.
         def interleave_benign(frames: torch.Tensor) -> torch.Tensor:
             modified = frames.clone()
-            # Insert benign-looking frames between
-            # In practice this would need actual benign frames
+            k = frames.shape[1]
+            benign_frame = frames[:, :1]
+            for t in range(0, k - 1, 2):  # even indices except the final frame
+                modified[:, t : t + 1] = benign_frame
             return modified
 
         all_scores, all_labels = self._evaluate_with_attack(val_loader, interleave_benign, gate)
@@ -184,11 +201,12 @@ class AdversarialAttacker:
         """Visual Similarity: benign-looking harmful actions."""
         results = {}
 
-        # Adversarial perturbation on pixel level
-        # PGD-style attack on input frames
-        epsilon = 8/255  # L_inf norm
-        alpha = 2/255
-        steps = 10
+        # Adversarial perturbation on pixel level (PGD-style attack).
+        # Config-driven so attack strength can be swept without editing code.
+        attack_cfg = self.config.get("adversarial", {})
+        epsilon = attack_cfg.get("pgd_epsilon", 8 / 255)  # L_inf norm
+        alpha = attack_cfg.get("pgd_alpha", 2 / 255)
+        steps = attack_cfg.get("pgd_steps", 10)
 
         def pgd_attack(frames: torch.Tensor) -> torch.Tensor:
             frames_adv = frames.clone().detach().requires_grad_(True)
@@ -284,9 +302,10 @@ class AdversarialAttacker:
     ) -> Dict[str, Any]:
         """PGD adversarial attack on full model."""
         # Already covered in visual_similarity, but run with stronger settings
-        epsilon = 16/255
-        alpha = 2/255
-        steps = 20
+        attack_cfg = self.config.get("adversarial", {})
+        epsilon = attack_cfg.get("pgd_strong_epsilon", 16 / 255)
+        alpha = attack_cfg.get("pgd_alpha", 2 / 255)
+        steps = attack_cfg.get("pgd_strong_steps", 20)
 
         def pgd_strong(frames: torch.Tensor) -> torch.Tensor:
             frames_adv = frames.clone().detach().requires_grad_(True)
@@ -409,21 +428,19 @@ class StressTestRunner:
         logger.info("=" * 60)
 
         # Load model
-        checkpoint_path = self.config.get("checkpoint", "checkpoints/stage_c/best.pt")
+        checkpoint_path = self.config.get("checkpoint", DEFAULT_SENTINEL_CHECKPOINT)
         logger.info(f"Loading model from: {checkpoint_path}")
 
         model = create_sentinel_model(self.config)
-        checkpoint = torch.load(checkpoint_path, map_location=self.device)
-        model.load_state_dict(checkpoint["model_state_dict"])
+        model.load_state_dict(_load_state_dict_safe(checkpoint_path, self.device))
 
         # Load gate if available
         gate = None
-        gate_path = self.config.get("gate_checkpoint", "checkpoints/gate/latest.pt")
+        gate_path = self.config.get("gate_checkpoint", DEFAULT_GATE_CHECKPOINT)
         if Path(gate_path).exists():
             logger.info(f"Loading gate from: {gate_path}")
             gate = DecisionGate()
-            gate_checkpoint = torch.load(gate_path, map_location=self.device)
-            gate.load_state_dict(gate_checkpoint["model_state_dict"])
+            gate.load_state_dict(_load_state_dict_safe(gate_path, self.device))
 
         # Create validation loader
         val_transform = create_val_transform(OmegaConf.to_container(self.config))

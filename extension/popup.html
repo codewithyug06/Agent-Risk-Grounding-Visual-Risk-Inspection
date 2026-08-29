@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>SENTINEL-Vision</title>
+  <style>
+    body { width: 300px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 14px; background: #0f172a; color: #f8fafc; }
+    h1 { font-size: 14px; margin: 0 0 10px; }
+    .status { padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 13px; }
+    .status.allow { background: #14532d; border: 1px solid #16a34a; }
+    .status.pause { background: #78350f; border: 1px solid #d97706; }
+    .status.block { background: #7f1d1d; border: 1px solid #dc2626; }
+    .status.unknown { background: #1e293b; border: 1px solid #475569; }
+    .row { display: flex; justify-content: space-between; font-size: 12px; margin-top: 4px; opacity: 0.85; }
+    button { width: 100%; margin-top: 8px; background: #1e293b; color: #f8fafc; border: 1px solid #475569; border-radius: 6px; padding: 8px; font-size: 12px; cursor: pointer; }
+    button:hover { background: #334155; }
+    a { color: #93c5fd; }
+  </style>
+</head>
+<body>
+  <h1>SENTINEL-Vision Agent Monitor</h1>
+  <div id="status" class="status unknown">Waiting for first check...</div>
+  <div class="row"><span>Gateway</span><span id="gatewayUrl">-</span></div>
+  <button id="openOptions">Settings</button>
+  <button id="openDashboard">Open Incident Dashboard</button>
+  <script src="popup.js"></script>
+</body>
+</html>

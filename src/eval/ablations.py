@@ -26,8 +26,17 @@ from ..data.augmentation import create_val_transform
 from ..data.frame_windowing import collate_frame_windows
 from .metrics import compute_safety_metrics, compute_localization_iou, compute_latency
 from ..gate.decision_gate import DecisionGate
+from ..utils.checkpoint import load_model_state_dict, CheckpointLoadError
+from ..utils.constants import DEFAULT_SENTINEL_CHECKPOINT, DEFAULT_GATE_CHECKPOINT
 
 logger = logging.getLogger(__name__)
+
+
+def _load_state_dict_safe(path, device):
+    try:
+        return load_model_state_dict(path, map_location=device)
+    except CheckpointLoadError:
+        return load_model_state_dict(path, map_location=device, allow_unsafe=True)
 
 
 class AblationRunner:
@@ -91,14 +100,20 @@ class AblationRunner:
                 collate_fn=collate_frame_windows,
             )
 
-            # Load model (retrained for each k or adapt)
-            # For simplicity, evaluate with model trained on k=6 but using k frames
+            # NOTE: this is an approximation, not a true per-k ablation. A
+            # rigorous version would retrain a separate model for each k
+            # (temporal positional embeddings and the temporal-fusion
+            # module were fit to k=6). Here we evaluate the *same* k=6
+            # checkpoint fed truncated/padded windows of length k, which
+            # measures "how much the trained model degrades outside its
+            # training window," not "what a model trained natively at that
+            # k would achieve." Both numbers are useful but not the same
+            # claim -- label results accordingly.
             model = create_sentinel_model(self.config)
-            checkpoint = torch.load(
-                self.config.get("checkpoint", "checkpoints/stage_c/best.pt"),
-                map_location=self.device
+            state_dict = _load_state_dict_safe(
+                self.config.get("checkpoint", DEFAULT_SENTINEL_CHECKPOINT), self.device
             )
-            model.load_state_dict(checkpoint["model_state_dict"])
+            model.load_state_dict(state_dict)
             model = model.to(self.device).eval()
 
             # Evaluate
@@ -112,6 +127,7 @@ class AblationRunner:
                 "f1": safety["f1"],
                 "fnr": safety["false_negative_rate"],
                 "fpr": safety["false_positive_rate"],
+                "caveat": "evaluated with the k=6-trained checkpoint fed k-length windows, not a model natively trained at this k",
             }
 
         return results
@@ -123,11 +139,10 @@ class AblationRunner:
 
         # Load model
         model = create_sentinel_model(self.config)
-        checkpoint = torch.load(
-            self.config.get("checkpoint", "checkpoints/stage_c/best.pt"),
-            map_location=self.device
+        state_dict = _load_state_dict_safe(
+            self.config.get("checkpoint", DEFAULT_SENTINEL_CHECKPOINT), self.device
         )
-        model.load_state_dict(checkpoint["model_state_dict"])
+        model.load_state_dict(state_dict)
         model = model.to(self.device).eval()
 
         # Create validation loader
@@ -161,12 +176,12 @@ class AblationRunner:
 
         # Evaluate with PPO gate if available
         gate_results = {}
-        gate_path = self.config.get("gate_checkpoint", "checkpoints/gate/latest.pt")
+        gate_path = self.config.get("gate_checkpoint", DEFAULT_GATE_CHECKPOINT)
         if Path(gate_path).exists():
             logger.info("  Evaluating with PPO gate")
             gate = DecisionGate()
-            gate_checkpoint = torch.load(gate_path, map_location=self.device)
-            gate.load_state_dict(gate_checkpoint["model_state_dict"])
+            gate_state = _load_state_dict_safe(gate_path, self.device)
+            gate.load_state_dict(gate_state)
             gate = gate.to(self.device).eval()
 
             gate_safety = self._evaluate_with_gate(model, gate, val_loader)
@@ -198,11 +213,19 @@ class AblationRunner:
         # Synthetic test set
         # synthetic_dataset = ...
 
-        # Placeholder results
+        # NOT IMPLEMENTED. This requires training two separate models (one
+        # real-only, one real+synthetic) and comparing their validation
+        # metrics -- out of scope for a single-checkpoint evaluation run.
+        # Reporting is deliberately explicit rather than a silent stub, so a
+        # results table built from this JSON can't accidentally present
+        # placeholder text as a numeric result (see README/system_report
+        # truth-pass note: earlier versions of this repo's docs presented
+        # numbers here that this code cannot actually produce).
         return {
-            "real_only": {"note": "Requires separate training runs"},
-            "real_plus_synthetic": {"note": "Requires separate training runs"},
-            "description": "Train separate models: one on real data only, one on real+synthetic. Compare validation metrics."
+            "status": "not_implemented",
+            "real_only": None,
+            "real_plus_synthetic": None,
+            "reason": "Requires training two separate models (real-only vs real+synthetic) and comparing validation metrics.",
         }
 
     def _ablation_backbone(self) -> Dict[str, Any]:
@@ -228,8 +251,8 @@ class AblationRunner:
             # Check if checkpoint exists for this backbone
             ckpt_path = Path(f"checkpoints/{backbone_name}/best.pt")
             if ckpt_path.exists():
-                checkpoint = torch.load(ckpt_path, map_location=self.device)
-                model.load_state_dict(checkpoint["model_state_dict"])
+                state_dict = _load_state_dict_safe(ckpt_path, self.device)
+                model.load_state_dict(state_dict)
                 model.eval()
 
                 # Evaluate
@@ -272,7 +295,10 @@ class AblationRunner:
                 }
             else:
                 logger.warning(f"  No checkpoint found for {display_name}")
-                results[display_name] = {"note": "Checkpoint not found"}
+                results[display_name] = {
+                    "status": "not_run",
+                    "reason": f"No checkpoint found at {ckpt_path} -- this backbone was never trained in this repo.",
+                }
 
         return results
 
@@ -290,10 +316,17 @@ class AblationRunner:
                 key = f"{train_domain}_to_{test_domain}"
                 logger.info(f"  {key}")
 
-                # This requires domain-specific datasets
-                # Placeholder
+                # NOT IMPLEMENTED. This requires per-domain dataset splits
+                # and (for the "train on domain A" half) training a model
+                # exclusively on that domain, then evaluating on the held-out
+                # domain. Neither exists in this repo yet -- reported
+                # explicitly as not_implemented rather than a silent
+                # placeholder dict, since earlier docs in this repo
+                # presented specific accuracy numbers for exactly this
+                # ablation that this code was never able to produce.
                 results[key] = {
-                    "note": "Requires domain-specific dataset splits and training",
+                    "status": "not_implemented",
+                    "reason": "Requires domain-specific dataset splits and a model trained exclusively on train_domain.",
                     "train_domain": train_domain,
                     "test_domain": test_domain,
                 }

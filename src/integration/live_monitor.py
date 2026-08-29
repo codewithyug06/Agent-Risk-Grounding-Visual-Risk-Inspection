@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw, ImageFont
 from ..models.sentinel_model import create_sentinel_model
 from ..gate.decision_gate import DecisionGate, create_decision_gate
 from ..data.augmentation import create_val_transform
+from ..utils.constants import DEFAULT_SENTINEL_CHECKPOINT, DEFAULT_GATE_CHECKPOINT
 from .agent_wrapper import SentinelWrapper, AgentAction, SentinelDecision
 
 logger = logging.getLogger(__name__)
@@ -22,8 +23,8 @@ logger = logging.getLogger(__name__)
 @dataclass
 class MonitorConfig:
     """Configuration for live monitor."""
-    sentinel_checkpoint: str = "checkpoints/stage_c/best.pt"
-    gate_checkpoint: Optional[str] = "checkpoints/gate/latest.pt"
+    sentinel_checkpoint: str = DEFAULT_SENTINEL_CHECKPOINT
+    gate_checkpoint: Optional[str] = DEFAULT_GATE_CHECKPOINT
     device: str = "cuda"
     frame_window_size: int = 6
     target_resolution: Tuple[int, int] = (224, 224)
@@ -46,26 +47,18 @@ class FrameCapture:
 
     def _setup_capture(self):
         """Setup screen capture."""
-        try:
-            import mss
-            self.sct = mss.mss()
-            self.monitors = self.sct.monitors
-        except Exception:
-            logger.warning("mss not available or DISPLAY not set, using fallback")
-            self.sct = None
+        import mss
+        self.sct = mss.mss()
+        self.monitors = self.sct.monitors
 
     def capture(self, region: Optional[Tuple[int, int, int, int]] = None) -> Image.Image:
         """Capture screen region."""
-        if self.sct:
-            if region:
-                monitor = {"left": region[0], "top": region[1], "width": region[2], "height": region[3]}
-            else:
-                monitor = self.monitors[self.monitor_index + 1] if self.monitor_index + 1 < len(self.monitors) else self.monitors[0]
-            screenshot = self.sct.grab(monitor)
-            return Image.frombytes("RGB", screenshot.size, screenshot.rgb)
+        if region:
+            monitor = {"left": region[0], "top": region[1], "width": region[2], "height": region[3]}
         else:
-            # Fallback - return blank
-            return Image.new("RGB", (1920, 1080), color="black")
+            monitor = self.monitors[self.monitor_index + 1] if self.monitor_index + 1 < len(self.monitors) else self.monitors[0]
+        screenshot = self.sct.grab(monitor)
+        return Image.frombytes("RGB", screenshot.size, screenshot.rgb)
 
     def capture_numpy(self, region: Optional[Tuple[int, int, int, int]] = None) -> np.ndarray:
         """Capture as numpy array (BGR for OpenCV)."""
@@ -184,10 +177,13 @@ class DecisionLogger:
     """Logs decisions for audit trail."""
 
     def __init__(self, save_dir: Optional[str] = None):
+        import threading
+
         self.save_dir = Path(save_dir) if save_dir else None
         if self.save_dir:
             self.save_dir.mkdir(parents=True, exist_ok=True)
         self.log_buffer = deque(maxlen=1000)
+        self._flush_lock = threading.Lock()
 
     def log(self, decision: SentinelDecision, action: Optional[AgentAction] = None, frame: Optional[Image.Image] = None):
         """Log a decision."""
@@ -214,14 +210,18 @@ class DecisionLogger:
             self._flush()
 
     def _flush(self):
-        """Flush buffer to disk."""
+        """Flush buffer to disk. Locked so concurrent callers (multiple
+        capture ticks racing on a background thread) never interleave
+        partial lines in the same file."""
         if not self.save_dir:
             return
+        import json
+
         log_file = self.save_dir / f"decisions_{time.strftime('%Y%m%d')}.jsonl"
-        with open(log_file, "a") as f:
-            import json
-            for entry in list(self.log_buffer)[-10:]:
-                f.write(json.dumps(entry) + "\n")
+        with self._flush_lock:
+            with open(log_file, "a") as f:
+                for entry in list(self.log_buffer)[-10:]:
+                    f.write(json.dumps(entry) + "\n")
 
     def get_recent(self, n: int = 100) -> List[Dict]:
         """Get recent decisions."""
@@ -269,6 +269,13 @@ class LiveMonitor:
         # Callbacks
         self.on_decision: Optional[Callable[[SentinelDecision, Optional[AgentAction]], None]] = None
         self.on_high_risk: Optional[Callable[[SentinelDecision], None]] = None
+        # Called on the display tick with the latest (frame, decision) so a
+        # consumer (tray app, OpenCV GUI, web dashboard) can render it.
+        # Previously this was hardwired to a no-op, silently dropping the
+        # display tick entirely.
+        self.on_display_tick: Optional[Callable[[Optional[Image.Image], Optional[SentinelDecision]], None]] = None
+        self._last_frame: Optional[Image.Image] = None
+        self._last_decision: Optional[SentinelDecision] = None
 
     async def start(self):
         """Start live monitoring."""
@@ -313,6 +320,9 @@ class LiveMonitor:
         # Decide
         decision = self.sentinel.decide(prediction, action)
 
+        self._last_frame = frame
+        self._last_decision = decision
+
         # Log
         if self.logger:
             self.logger.log(decision, action, frame)
@@ -333,8 +343,9 @@ class LiveMonitor:
         self.stats["fps"] = 1000 / np.mean(self.latencies) if self.latencies else 0
 
     def _update_display(self):
-        """Update display (placeholder for GUI integration)."""
-        pass
+        """Push the latest frame/decision to whatever is rendering it."""
+        if self.on_display_tick:
+            self.on_display_tick(self._last_frame, self._last_decision)
 
     def stop(self):
         """Stop monitoring."""
@@ -405,8 +416,8 @@ class LiveMonitorGUI:
 
 def create_live_monitor(
     config,
-    sentinel_checkpoint: str = "checkpoints/stage_c/best.pt",
-    gate_checkpoint: str = "checkpoints/gate/latest.pt",
+    sentinel_checkpoint: str = DEFAULT_SENTINEL_CHECKPOINT,
+    gate_checkpoint: str = DEFAULT_GATE_CHECKPOINT,
     device: str = "cuda",
     capture_fps: float = 3.0,
     save_dir: Optional[str] = "logs/live_monitor",
