@@ -1,6 +1,4 @@
-"""
-Logging utilities for SENTINEL-Vision.
-"""
+
 
 import logging
 import sys
