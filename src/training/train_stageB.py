@@ -20,8 +20,6 @@ from ..training.trainer import (
 from ..training.losses import create_loss_function
 from ..utils.logging import setup_logging
 from ..utils.config import load_config
-from ..utils.checkpoint import load_checkpoint, CheckpointLoadError
-from ..utils.constants import DEFAULT_SENTINEL_CHECKPOINT
 
 logger = logging.getLogger(__name__)
 
@@ -49,14 +47,8 @@ def train_stage_b(config: DictConfig) -> DictConfig:
     device = config.get("device", "cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
 
-    # Load Stage A checkpoint. checkpoints/stage_a/best.pt was the original
-    # default but never matched this repo's actual layout (checkpoints/stageA.pt).
-    from pathlib import Path as _Path
-
-    default_stage_a = (
-        "checkpoints/stageA.pt" if _Path("checkpoints/stageA.pt").exists() else "checkpoints/stage_a/best.pt"
-    )
-    stage_a_checkpoint = config.get("stage_a_checkpoint", default_stage_a)
+    # Load Stage A checkpoint
+    stage_a_checkpoint = config.get("stage_a_checkpoint", "checkpoints/stage_a/best.pt")
     logger.info(f"Loading Stage A checkpoint: {stage_a_checkpoint}")
 
     # Create datasets with new target categories
@@ -88,17 +80,8 @@ def train_stage_b(config: DictConfig) -> DictConfig:
     model = model.to(device)
 
     # Load Stage A checkpoint
-    try:
-        checkpoint = load_checkpoint(stage_a_checkpoint, map_location=device)
-    except CheckpointLoadError:
-        checkpoint = load_checkpoint(stage_a_checkpoint, map_location=device, allow_unsafe=True)
-    load_result = model.load_state_dict(checkpoint["model_state_dict"], strict=False)
-    if load_result.missing_keys or load_result.unexpected_keys:
-        logger.warning(
-            "Stage A -> Stage B checkpoint load was partial. missing_keys=%s unexpected_keys=%s",
-            load_result.missing_keys,
-            load_result.unexpected_keys,
-        )
+    checkpoint = torch.load(stage_a_checkpoint, map_location=device)
+    model.load_state_dict(checkpoint["model_state_dict"], strict=False)
     logger.info("Stage A weights loaded")
 
     # Unfreeze backbone for Stage B

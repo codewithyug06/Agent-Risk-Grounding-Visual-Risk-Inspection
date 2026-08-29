@@ -2,8 +2,6 @@ import asyncio
 import base64
 import io
 import logging
-import os
-import secrets
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -14,7 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 import torch
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile, BackgroundTasks
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -23,57 +21,9 @@ from PIL import Image
 from ..models.sentinel_model import create_sentinel_model
 from ..gate.decision_gate import DecisionGate, create_decision_gate
 from ..data.augmentation import create_val_transform
-from ..utils.constants import (
-    DEFAULT_GATEWAY_HOST,
-    DEFAULT_GATEWAY_PORT,
-    DEFAULT_SENTINEL_CHECKPOINT,
-    DEFAULT_GATE_CHECKPOINT,
-)
 from .agent_wrapper import SentinelWrapper, AgentAction, SentinelDecision, FrameBuffer
 
 logger = logging.getLogger(__name__)
-
-# ============================================================
-# Local-only auth
-# ============================================================
-# This gateway is designed to run on 127.0.0.1 and be called by the desktop
-# app / browser extension running on the same machine. A shared token
-# (generated on first run, persisted under ~/.sentinel_vision/) still stops
-# any other local process/port-scanning page from silently querying or
-# influencing agent-oversight decisions.
-TOKEN_PATH = Path.home() / ".sentinel_vision" / "api_token.txt"
-
-
-def _load_or_create_api_token() -> str:
-    env_token = os.environ.get("SENTINEL_API_TOKEN")
-    if env_token:
-        return env_token
-    if TOKEN_PATH.exists():
-        return TOKEN_PATH.read_text(encoding="utf-8").strip()
-    TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
-    token = secrets.token_urlsafe(32)
-    TOKEN_PATH.write_text(token, encoding="utf-8")
-    logger.info("Generated new SENTINEL API token at %s", TOKEN_PATH)
-    return token
-
-
-API_TOKEN = _load_or_create_api_token()
-
-# Extension/desktop-app origins allowed to make credentialed requests.
-# "*"+credentials is rejected by browsers anyway and was a signal of an
-# unreviewed default; scope explicitly instead.
-ALLOWED_ORIGINS = [
-    "http://127.0.0.1",
-    "http://localhost",
-    "chrome-extension://*",
-]
-
-
-async def require_api_token(x_sentinel_token: Optional[str] = Header(default=None)):
-    """FastAPI dependency enforcing the local shared-secret token."""
-    if not x_sentinel_token or not secrets.compare_digest(x_sentinel_token, API_TOKEN):
-        raise HTTPException(status_code=401, detail="Missing or invalid X-Sentinel-Token header")
-    return True
 
 
 # ============================================================
@@ -144,19 +94,6 @@ class APIState:
         self.request_count: int = 0
         self.latencies: List[float] = []
         self.config = None
-        # Bounded ring buffer of recent decisions so /decision/{id} is a real
-        # lookup instead of an unconditional 404. Not a database -- fine for
-        # a local single-user gateway.
-        self.decisions: Dict[str, "DecisionResponse"] = {}
-        self._decision_order: List[str] = []
-        self._max_decisions = 500
-
-    def record_decision(self, request_id: str, response: "DecisionResponse") -> None:
-        self.decisions[request_id] = response
-        self._decision_order.append(request_id)
-        if len(self._decision_order) > self._max_decisions:
-            oldest = self._decision_order.pop(0)
-            self.decisions.pop(oldest, None)
 
     def record_latency(self, latency_ms: float):
         self.latencies.append(latency_ms)
@@ -250,11 +187,10 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1", "http://localhost"],
-    allow_origin_regex=r"chrome-extension://.*|moz-extension://.*",
-    allow_credentials=False,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "X-Sentinel-Token"],
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -282,7 +218,7 @@ async def get_stats():
 
 
 @app.post("/frame", response_model=Dict[str, Any])
-async def submit_frame(request: FrameRequest, _auth: bool = Depends(require_api_token)):
+async def submit_frame(request: FrameRequest):
     """
     Submit a frame to the rolling buffer.
     Returns current buffer status.
@@ -307,11 +243,7 @@ async def submit_frame(request: FrameRequest, _auth: bool = Depends(require_api_
 
 
 @app.post("/intercept", response_model=DecisionResponse)
-async def intercept_action(
-    request: ActionRequest,
-    background_tasks: BackgroundTasks,
-    _auth: bool = Depends(require_api_token),
-):
+async def intercept_action(request: ActionRequest, background_tasks: BackgroundTasks):
     """
     Intercept an agent action.
     Returns SENTINEL-Vision decision: ALLOW, PAUSE, or HARD_BLOCK.
@@ -341,14 +273,8 @@ async def intercept_action(
         metadata=request.metadata,
     )
 
-    # Get decision. auto_capture=False: a frame was already pushed onto the
-    # buffer above (either the client's frame_b64 or an explicit capture) --
-    # intercept_action must not additionally pull from
-    # sentinel_wrapper.capture, which has no real source wired up for the
-    # API server and would previously silently return a blank gray frame
-    # (now: raises loudly instead, which would otherwise break every
-    # request that includes frame_b64, e.g. from the browser extension).
-    decision, should_proceed = api_state.sentinel_wrapper.intercept_action(action, auto_capture=False)
+    # Get decision
+    decision, should_proceed = api_state.sentinel_wrapper.intercept_action(action)
 
     # Include heatmap in response
     prediction = api_state.sentinel_wrapper.predict()
@@ -361,13 +287,11 @@ async def intercept_action(
     # Log in background
     background_tasks.add_task(log_decision, request_id, decision, action, latency)
 
-    response = create_decision_response(request_id, decision, should_proceed, heatmap)
-    api_state.record_decision(request_id, response)
-    return response
+    return create_decision_response(request_id, decision, should_proceed, heatmap)
 
 
 @app.post("/predict", response_model=Dict[str, Any])
-async def predict_only(request: FrameRequest, _auth: bool = Depends(require_api_token)):
+async def predict_only(request: FrameRequest):
     """
     Run prediction on provided frames without action interception.
     Useful for monitoring without blocking.
@@ -415,7 +339,7 @@ async def get_buffer_status():
 
 
 @app.post("/buffer/clear", response_model=Dict[str, str])
-async def clear_buffer(_auth: bool = Depends(require_api_token)):
+async def clear_buffer():
     """Clear the frame buffer."""
     if not api_state.sentinel_wrapper:
         raise HTTPException(status_code=503, detail="Sentinel not initialized")
@@ -425,12 +349,10 @@ async def clear_buffer(_auth: bool = Depends(require_api_token)):
 
 
 @app.get("/decision/{request_id}", response_model=DecisionResponse)
-async def get_decision(request_id: str, _auth: bool = Depends(require_api_token)):
-    """Get a previous decision by ID, if it is still in the in-memory ring buffer."""
-    response = api_state.decisions.get(request_id)
-    if response is None:
-        raise HTTPException(status_code=404, detail="Decision not found (expired or unknown request_id)")
-    return response
+async def get_decision(request_id: str):
+    """Get a previous decision by ID (if logged)."""
+    # In production, this would query a database
+    raise HTTPException(status_code=404, detail="Decision not found")
 
 
 # ============================================================
@@ -452,26 +374,19 @@ class ConnectionManager:
         self.active_connections.remove(websocket)
 
     async def broadcast(self, message: Dict[str, Any]):
-        dead_connections = []
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
-            except Exception as exc:
-                logger.debug("Dropping dead websocket connection: %s", exc)
-                dead_connections.append(connection)
-        for connection in dead_connections:
-            self.disconnect(connection)
+            except:
+                pass
 
 
 manager = ConnectionManager()
 
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = None):
-    """WebSocket for real-time decisions. Requires ?token=<X-Sentinel-Token value>."""
-    if not token or not secrets.compare_digest(token, API_TOKEN):
-        await websocket.close(code=4401)
-        return
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket for real-time decisions."""
     await manager.connect(websocket)
     try:
         while True:
@@ -515,8 +430,8 @@ async def log_decision(request_id: str, decision: SentinelDecision, action: Agen
 
 def initialize_api(
     config,
-    sentinel_checkpoint: str = DEFAULT_SENTINEL_CHECKPOINT,
-    gate_checkpoint: Optional[str] = DEFAULT_GATE_CHECKPOINT,
+    sentinel_checkpoint: str = "checkpoints/stage_c/best.pt",
+    gate_checkpoint: Optional[str] = "checkpoints/gate/latest.pt",
     device: str = "cuda",
     frame_buffer_size: int = 6,
     target_resolution: Tuple[int, int] = (224, 224),
@@ -536,8 +451,8 @@ def initialize_api(
 
 def create_app(
     config,
-    sentinel_checkpoint: str = DEFAULT_SENTINEL_CHECKPOINT,
-    gate_checkpoint: Optional[str] = DEFAULT_GATE_CHECKPOINT,
+    sentinel_checkpoint: str = "checkpoints/stage_c/best.pt",
+    gate_checkpoint: Optional[str] = "checkpoints/gate/latest.pt",
     device: str = "cuda",
     frame_buffer_size: int = 6,
     target_resolution: Tuple[int, int] = (224, 224),
@@ -559,12 +474,12 @@ def create_app(
 # ============================================================
 
 def run_server(
-    host: str = DEFAULT_GATEWAY_HOST,
-    port: int = DEFAULT_GATEWAY_PORT,
+    host: str = "0.0.0.0",
+    port: int = 8000,
     config_path: str = "../../configs",
     config_name: str = "model_small",
-    sentinel_checkpoint: str = DEFAULT_SENTINEL_CHECKPOINT,
-    gate_checkpoint: str = DEFAULT_GATE_CHECKPOINT,
+    sentinel_checkpoint: str = "checkpoints/stage_c/best.pt",
+    gate_checkpoint: str = "checkpoints/gate/latest.pt",
     device: str = "cuda",
 ):
     """Run the API server."""

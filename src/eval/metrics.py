@@ -25,7 +25,6 @@ def compute_precision_recall_f1(
     labels: Union[torch.Tensor, np.ndarray, List],
     threshold: float = 0.5,
     average: str = "binary",
-    is_logits: bool = False,
 ) -> Dict[str, float]:
     """
     Compute precision, recall, F1 for binary or multi-class classification.
@@ -35,12 +34,6 @@ def compute_precision_recall_f1(
         labels: Ground truth labels (N,)
         threshold: Threshold for binary classification
         average: 'binary', 'macro', 'micro', 'weighted'
-        is_logits: For 1-D `predictions`, whether they are raw logits (apply
-            sigmoid before thresholding) or already-probabilities. This used
-            to be guessed from `predictions.max() <= 1.0`, which silently
-            misclassifies low-confidence logits (e.g. a batch of harmful-risk
-            logits near 0) as probabilities -- the caller knows which it
-            produced, so require it explicitly instead of guessing.
 
     Returns:
         Dict with precision, recall, f1, support
@@ -57,11 +50,7 @@ def compute_precision_recall_f1(
     # Handle probability/logits input
     if predictions.ndim == 1:
         # Binary probabilities or logits
-        if is_logits:
-            probs = torch.sigmoid(torch.tensor(predictions)).numpy()
-        else:
-            probs = predictions
-        preds_binary = (probs > threshold).astype(int)
+        preds_binary = (predictions > threshold).astype(int) if predictions.max() <= 1.0 else (torch.sigmoid(torch.tensor(predictions)) > threshold).numpy().astype(int)
     elif predictions.ndim == 2:
         # Multi-class probabilities or logits
         preds_binary = predictions.argmax(axis=1)
@@ -295,11 +284,7 @@ def compute_cross_agent_generalization(
         gaps[f"{metric}_train"] = float(train_val)
         gaps[f"{metric}_test"] = float(test_val)
 
-    # Select by key name, not position -- a stride-3 slice over dict values
-    # silently breaks (picks up train/test values instead of gaps) the
-    # moment insertion order changes or `metrics` has a different length.
-    gap_values = [v for k, v in gaps.items() if k.endswith("_gap")]
-    gaps["average_gap"] = float(np.mean(gap_values)) if gap_values else 0.0
+    gaps["average_gap"] = float(np.mean(list(gaps.values())[::3]))  # Every 3rd is gap
     return gaps
 
 

@@ -10,22 +10,7 @@ from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 import logging
 
-from ..utils.constants import CATEGORY_NAMES, NUM_CATEGORIES, ACTION_TYPES, NUM_ACTION_TYPES
-
 logger = logging.getLogger(__name__)
-
-# Full, lossless state layout would be
-# [risk_score, heatmap_conf] + category_onehot(5) + action_onehot(5) = 12 dims.
-# The originally trained gate checkpoint (checkpoints/gate_rl.pt) was trained
-# with state_dim=8, which truncates that to category_onehot[:4] + action_onehot[:2].
-# That silently dropped the "benign" category slot and the "navigate"/"other"
-# action slots -- not a deliberate compression, just an 8-dim default nobody
-# revisited. We cannot widen the trained checkpoint's input layer without
-# retraining, so state_dim=8 stays the default for loading gate_rl.pt, but
-# the truncation is now named and documented instead of silently magic, and
-# any *new* gate can opt into the full FULL_STATE_DIM to avoid this loss.
-FULL_STATE_DIM = 2 + NUM_CATEGORIES + NUM_ACTION_TYPES
-LEGACY_STATE_DIM = 8  # matches checkpoints/gate_rl.pt's trained input layer
 
 
 class DecisionGate(nn.Module):
@@ -45,7 +30,7 @@ class DecisionGate(nn.Module):
 
     def __init__(
         self,
-        state_dim: int = LEGACY_STATE_DIM,
+        state_dim: int = 8,
         hidden_dim: int = 128,
         num_actions: int = 3,
         dropout: float = 0.1,
@@ -155,12 +140,9 @@ class DecisionGate(nn.Module):
         self.eval()
 
         # Convert category to index if string
+        category_names = ["destructive", "financial", "privacy", "irreversible_external", "benign"]
         if isinstance(category, str):
-            category = (
-                CATEGORY_NAMES.index(category)
-                if category in CATEGORY_NAMES
-                else CATEGORY_NAMES.index("benign")
-            )
+            category = category_names.index(category) if category in category_names else 4
 
         # Build state vector
         state = self._build_state(risk_score, category, heatmap_conf, action_type)
@@ -184,28 +166,23 @@ class DecisionGate(nn.Module):
         action_type: int,
     ) -> List[float]:
         """Build state vector from risk signals."""
-        category_onehot = [0.0] * NUM_CATEGORIES
-        if 0 <= category < NUM_CATEGORIES:
+        # One-hot encode category (5 dims)
+        category_onehot = [0.0] * 5
+        if 0 <= category < 5:
             category_onehot[category] = 1.0
 
-        action_onehot = [0.0] * NUM_ACTION_TYPES
-        if 0 <= action_type < NUM_ACTION_TYPES:
+        # State: [risk_score, heatmap_conf, category_onehot(4), action_onehot(2)] = 8 dims
+        action_onehot = [0.0, 0.0, 0.0]
+        if 0 <= action_type < 3:
             action_onehot[action_type] = 1.0
 
-        full_state = [risk_score, heatmap_conf] + category_onehot + action_onehot
-
-        if self.state_dim == LEGACY_STATE_DIM:
-            # Backward-compatible truncation matching gate_rl.pt's trained
-            # input layer: keeps [destructive, financial, privacy,
-            # irreversible_external] (drops "benign" -- redundant since
-            # risk_score is already near 0 for benign predictions) and
-            # [click, type] (drops navigate/scroll/other -- those actions
-            # collapse to "no action signal" under this legacy layout).
+        if self.state_dim == 8:
             return [risk_score, heatmap_conf] + category_onehot[:4] + action_onehot[:2]
 
+        full_state = [risk_score, heatmap_conf] + category_onehot + action_onehot
         if len(full_state) < self.state_dim:
             full_state = full_state + [0.0] * (self.state_dim - len(full_state))
-        return full_state[: self.state_dim]
+        return full_state[:self.state_dim]
 
     def get_action_probs(
         self,
@@ -218,11 +195,8 @@ class DecisionGate(nn.Module):
         self.eval()
 
         if isinstance(category, str):
-            category = (
-                CATEGORY_NAMES.index(category)
-                if category in CATEGORY_NAMES
-                else CATEGORY_NAMES.index("benign")
-            )
+            category_names = ["destructive", "financial", "privacy", "irreversible_external", "benign"]
+            category = category_names.index(category) if category in category_names else 4
 
         state = self._build_state(risk_score, category, heatmap_conf, action_type)
         state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0)

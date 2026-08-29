@@ -3,7 +3,6 @@ Shared training loop for SENTINEL-Vision.
 Handles Hydra config, W&B logging, mixed precision, checkpointing, early stopping.
 """
 
-import math
 import os
 import shutil
 import time
@@ -133,8 +132,6 @@ class SentinelTrainer:
         """
         logger.info(f"Starting training for {self.stage_name} (Epochs {start_epoch} to {self.epochs})")
 
-        val_metrics: Dict[str, float] = {}
-
         for epoch in range(start_epoch, self.epochs + 1):
             self.model.set_epoch(epoch)
 
@@ -153,13 +150,8 @@ class SentinelTrainer:
                 self.history["val_recall_harmful"].append(val_metrics["recall_harmful"])
                 self.history["val_localization_iou"].append(val_metrics.get("localization_iou", 0.0))
 
-                # Checkpointing. val_metrics keys come back without a "val_"
-                # prefix (e.g. "recall_harmful") while self.checkpoint_metric
-                # is typically configured with one (e.g. "val_recall_harmful")
-                # to match self.history's keys -- normalize once instead of
-                # string-replacing at every lookup.
-                canonical_metric = self.checkpoint_metric.removeprefix("val_")
-                metric_value = val_metrics.get(canonical_metric, val_metrics.get("loss", 0.0))
+                # Checkpointing
+                metric_value = val_metrics.get(self.checkpoint_metric, val_metrics["loss"])
                 if metric_value > self.best_metric:
                     self.best_metric = metric_value
                     self._save_checkpoint(epoch, val_metrics, is_best=True)
@@ -174,11 +166,9 @@ class SentinelTrainer:
                     logger.info(f"Early stopping triggered after {epoch} epochs")
                     break
 
-            # Regular checkpoint and update latest.pt
+            # Regular checkpoint
             if epoch % self.config.get("save_interval", 5) == 0:
-                self._save_checkpoint(epoch, val_metrics, is_best=False)
-            else:
-                self._save_checkpoint(epoch, val_metrics, is_best=False, is_latest_only=True)
+                self._save_checkpoint(epoch, val_metrics if 'val_metrics' in locals() else {}, is_best=False)
 
             # Scheduler step
             if self.scheduler is not None:
@@ -434,7 +424,6 @@ class SentinelTrainer:
         metrics: Dict[str, float],
         is_best: bool = False,
         suffix: str = "",
-        is_latest_only: bool = False,
     ):
         """Save model checkpoint."""
         checkpoint = {
@@ -449,12 +438,6 @@ class SentinelTrainer:
             "stage": self.stage_name,
         }
 
-        latest_path = self.checkpoint_dir / "latest.pt"
-
-        if is_latest_only:
-            torch.save(checkpoint, latest_path)
-            return
-
         if is_best:
             path = self.checkpoint_dir / f"best{suffix}.pt"
         else:
@@ -463,39 +446,21 @@ class SentinelTrainer:
         torch.save(checkpoint, path)
         logger.info(f"Checkpoint saved: {path}")
 
-        # Save latest checkpoint. Symlinks require elevated privileges on
-        # Windows (this repo's dev OS) and will always fall through to the
-        # copy2 fallback, which duplicates a large (~170MB) file every save
-        # -- so once we've learned symlinks aren't available, skip retrying
-        # them.
+        # Save latest checkpoint
+        latest_path = self.checkpoint_dir / "latest.pt"
         if latest_path.exists() or latest_path.is_symlink():
             try:
                 latest_path.unlink()
-            except OSError:
+            except Exception:
                 pass
-        if getattr(self, "_symlinks_unsupported", False):
+        try:
+            latest_path.symlink_to(path.name)
+        except (OSError, NotImplementedError, Exception):
             shutil.copy2(path, latest_path)
-        else:
-            try:
-                latest_path.symlink_to(path.name)
-            except (OSError, NotImplementedError):
-                self._symlinks_unsupported = True
-                shutil.copy2(path, latest_path)
 
     def resume_from_checkpoint(self, checkpoint_path: str):
         """Resume training from checkpoint."""
-        from ..utils.checkpoint import load_checkpoint, CheckpointLoadError
-
-        try:
-            checkpoint = load_checkpoint(checkpoint_path, map_location=self.device)
-        except CheckpointLoadError:
-            logger.warning(
-                "'%s' failed restricted (weights_only) load; retrying with "
-                "allow_unsafe=True because it is a locally-produced training "
-                "checkpoint.",
-                checkpoint_path,
-            )
-            checkpoint = load_checkpoint(checkpoint_path, map_location=self.device, allow_unsafe=True)
+        checkpoint = torch.load(checkpoint_path, map_location=self.device)
 
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -503,15 +468,10 @@ class SentinelTrainer:
             self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
         self.scaler.load_state_dict(checkpoint["scaler_state_dict"])
         self.history = checkpoint.get("history", self.history)
-        
-        # Robustly load best metric
-        saved_metrics = checkpoint.get("metrics", {})
-        metric_key = self.checkpoint_metric
-        stripped_key = metric_key.replace("val_", "")
-        self.best_metric = saved_metrics.get(metric_key, saved_metrics.get(stripped_key, float("-inf")))
+        self.best_metric = checkpoint.get("metrics", {}).get(self.checkpoint_metric, float("-inf"))
 
         start_epoch = checkpoint["epoch"] + 1
-        logger.info(f"Resumed from epoch {checkpoint['epoch']}, best metric ({metric_key}): {self.best_metric:.4f}")
+        logger.info(f"Resumed from epoch {checkpoint['epoch']}, best metric: {self.best_metric:.4f}")
 
         return start_epoch
 
@@ -594,3 +554,7 @@ def create_data_loaders(
     )
 
     return train_loader, val_loader
+
+
+# Need to import math at top
+import math

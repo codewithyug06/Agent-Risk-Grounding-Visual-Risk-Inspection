@@ -160,14 +160,7 @@ class RiskHeadWithUncertainty(RiskHead):
         """
         n_samples = n_samples or self.mc_dropout_samples
 
-        # Enable dropout at inference time. nn.Module.training is shared
-        # mutable state on the module instance -- toggling it here is not
-        # thread-safe if the same RiskHeadWithUncertainty instance is called
-        # concurrently from multiple request threads (e.g. behind the
-        # FastAPI gateway). Restore the *original* mode afterwards rather
-        # than unconditionally forcing eval(), so a concurrent caller that
-        # expected training mode doesn't get silently flipped to eval.
-        was_training = self.training
+        # Enable dropout at inference time
         self.train()
 
         risk_scores = []
@@ -179,7 +172,7 @@ class RiskHeadWithUncertainty(RiskHead):
                 risk_scores.append(out["risk_score"])
                 category_probs_list.append(out["category_probs"])
 
-        self.train(was_training)
+        self.eval()
 
         # Stack samples
         risk_scores = torch.stack(risk_scores, dim=0)  # (n_samples, B, 1)

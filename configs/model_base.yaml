@@ -2,23 +2,6 @@ backbone: "convnext_tiny"
 pretrained: true
 freeze_backbone_epochs: 3
 
-# IMPORTANT FIX: this was previously undeclared, so every downstream head
-# (TemporalFusion/RiskHead/LocalizationHead) silently used the
-# config.get("embed_dim", 384) fallback -- but convnext_tiny's real feature
-# dimension (self.backbone.num_features in FrameEncoder) is 768, not 384.
-# Any model actually trained with this config before this fix would have
-# hit a shape mismatch the moment temporal fusion tried to consume 768-dim
-# frame-encoder output through 384-dim-sized layers (or, if it happened not
-# to error immediately due to lazy shape inference somewhere, would have
-# silently corrupted the projected features). There is no ConvNeXt-Tiny
-# checkpoint in checkpoints/ for this repo, consistent with this config
-# path likely never having been exercised end-to-end.
-embed_dim: 768
-image_size: 224
-frame_window:
-  k: 6
-  resolution: [224, 224]
-
 temporal:
   num_heads: 8
   num_layers: 3
@@ -33,20 +16,6 @@ localization:
   anchor_sizes: [32, 64, 128, 256]
   num_anchors: 9
   iou_threshold: 0.5
-
-# See configs/model_small.yaml for why this section exists: these were
-# previously undeclared and silently defaulted in src/training/losses.py.
-loss:
-  risk_weight: 2.0
-  category_weight: 1.0
-  localization_weight: 1.5
-  harmful_class_weight: 5.0
-  category_class_weights: [3.0, 3.0, 3.0, 3.0, 1.0]
-  use_focal_loss: true
-  focal_alpha: 0.75
-  focal_gamma: 2.0
-  giou_weight: 1.0
-  l1_weight: 0.5
 
 training:
   batch_size: 16

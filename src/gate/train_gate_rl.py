@@ -3,37 +3,25 @@ PPO Training for SENTINEL-Vision Decision Gate.
 Trains the gate policy using simulated episodes from the dataset.
 """
 
-import os
-import sys
 import shutil
-import logging
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
-from collections import deque
-
-# Ensure project root is in sys.path
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
+from typing import Dict, List, Optional, Tuple
+import logging
 import numpy as np
-from omegaconf import DictConfig, OmegaConf
+from collections import deque
+from omegaconf import DictConfig
 import hydra
 
-from src.models.sentinel_model import SentinelModel, create_sentinel_model
-from src.data.loaders import SentinelDataset
-from src.data.augmentation import create_val_transform
-from src.data.frame_windowing import collate_frame_windows
-from src.gate.decision_gate import DecisionGate, create_decision_gate
-from src.gate.reward import AsymmetricReward, create_reward_function
-from src.utils.logging import setup_logging
-from src.utils.checkpoint import load_checkpoint, save_checkpoint, CheckpointLoadError
-from src.utils.constants import DEFAULT_SENTINEL_CHECKPOINT
+from ..models.sentinel_model import SentinelModel, create_sentinel_model
+from ..data.loaders import SentinelDataset
+from ..data.augmentation import create_val_transform
+from ..data.frame_windowing import collate_frame_windows
+from .decision_gate import DecisionGate, create_decision_gate
+from .reward import AsymmetricReward, create_reward_function
+from ..utils.logging import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -76,9 +64,9 @@ class PPOTrainer:
 
         # Training config
         train_config = config.get("training", {})
-        self.total_timesteps = train_config.get("total_timesteps", 10000)
-        self.eval_freq = train_config.get("eval_freq", 2000)
-        self.save_freq = train_config.get("save_freq", 5000)
+        self.total_timesteps = train_config.get("total_timesteps", 100000)
+        self.eval_freq = train_config.get("eval_freq", 10000)
+        self.save_freq = train_config.get("save_freq", 20000)
 
         # Optimizer
         self.optimizer = optim.AdamW(
@@ -109,8 +97,6 @@ class PPOTrainer:
         while self.timesteps < self.total_timesteps:
             # Collect trajectories
             trajectories = self._collect_trajectories()
-            if not trajectories:
-                break
 
             # Compute returns and advantages
             self._compute_returns(trajectories)
@@ -128,8 +114,7 @@ class PPOTrainer:
 
         # Final save
         self._save_checkpoint(suffix="_final")
-        self._log_metrics()
-        logger.info("PPO training completed successfully!")
+        logger.info("PPO training completed")
         return {"final_timesteps": self.timesteps}
 
     def _collect_trajectories(self) -> List[Dict]:
@@ -150,6 +135,7 @@ class PPOTrainer:
 
                 frames = batch["frames"]  # (B, k, C, H, W)
                 risk_labels = batch["risk_label"]  # (B,)
+                category_labels = batch["category_label"]  # (B,)
 
                 # Sentinel forward
                 sentinel_out = self.sentinel(frames)
@@ -159,16 +145,15 @@ class PPOTrainer:
                     risk_score = sentinel_out["risk_score"][i].item()
                     category = sentinel_out["category_idx"][i].item()
                     heatmap_conf = sentinel_out["objectness"][i].item()
-                    true_label = int(risk_labels[i].item())
+                    true_label = risk_labels[i].item()
 
                     # Gate decision
-                    state_vec = self.gate._build_state(risk_score, category, heatmap_conf, 0)
                     gate_out = self.gate(torch.tensor(
-                        state_vec,
+                        self.gate._build_state(risk_score, category, heatmap_conf, 0),
                         dtype=torch.float32, device=self.device
                     ).unsqueeze(0))
 
-                    action = int(gate_out["action"].item())
+                    action = gate_out["action"].item()
                     log_prob = gate_out["log_prob"].item()
                     value = gate_out["value"].item()
 
@@ -183,7 +168,7 @@ class PPOTrainer:
                         self.fp_count += 1
 
                     trajectories.append({
-                        "state": state_vec,
+                        "state": gate_out.get("state", None),  # Not stored in forward, rebuild if needed
                         "action": action,
                         "log_prob": log_prob,
                         "value": value,
@@ -231,8 +216,7 @@ class PPOTrainer:
 
         # Normalize advantages
         advantages = torch.tensor(advantages, dtype=torch.float32, device=self.device)
-        if len(advantages) > 1 and advantages.std() > 1e-6:
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         returns = torch.tensor(returns, dtype=torch.float32, device=self.device)
 
@@ -244,14 +228,18 @@ class PPOTrainer:
         """Perform PPO update on collected trajectories."""
         # Prepare batch tensors
         states = torch.stack([
-            torch.tensor(t["state"], dtype=torch.float32, device=self.device)
-            for t in trajectories
+            torch.tensor(
+                self.gate._build_state(
+                    t["risk_score"], t["category"], t["heatmap_conf"], 0
+                ),
+                dtype=torch.float32, device=self.device
+            ) for t in trajectories
         ])
 
-        actions = torch.tensor([t["action"] for t in trajectories], dtype=torch.long, device=self.device)
-        old_log_probs = torch.tensor([t["log_prob"] for t in trajectories], dtype=torch.float32, device=self.device)
-        returns = torch.tensor([t["return"] for t in trajectories], dtype=torch.float32, device=self.device)
-        advantages = torch.tensor([t["advantage"] for t in trajectories], dtype=torch.float32, device=self.device)
+        actions = torch.tensor([t["action"] for t in trajectories], device=self.device)
+        old_log_probs = torch.tensor([t["log_prob"] for t in trajectories], device=self.device)
+        returns = torch.tensor([t["return"] for t in trajectories], device=self.device)
+        advantages = torch.tensor([t["advantage"] for t in trajectories], device=self.device)
 
         # PPO epochs
         for _ in range(self.n_epochs):
@@ -259,8 +247,7 @@ class PPOTrainer:
             gate_out = self.gate(states)
 
             # Policy loss
-            dist = torch.distributions.Categorical(gate_out["action_probs"])
-            log_probs = dist.log_prob(actions)
+            log_probs = gate_out["log_prob"]
             ratio = (log_probs - old_log_probs).exp()
 
             surr1 = ratio * advantages
@@ -268,10 +255,10 @@ class PPOTrainer:
             policy_loss = -torch.min(surr1, surr2).mean()
 
             # Value loss
-            value_loss = F.mse_loss(gate_out["value"].squeeze(-1), returns)
+            value_loss = F.mse_loss(gate_out["value"].squeeze(), returns)
 
             # Entropy bonus
-            entropy_loss = -dist.entropy().mean()
+            entropy_loss = -gate_out["entropy"].mean()
 
             # Total loss
             loss = policy_loss + self.vf_coef * value_loss + self.ent_coef * entropy_loss
@@ -285,218 +272,150 @@ class PPOTrainer:
     def _log_metrics(self):
         """Log training metrics."""
         total_actions = sum(self.action_counts.values())
-        action_dist = {k: f"{v / max(1, total_actions):.2%}" for k, v in self.action_counts.items()}
+        action_dist = {k: v / max(1, total_actions) for k, v in self.action_counts.items()}
         fn_rate = self.fn_count / max(1, self.episode_count)
         fp_rate = self.fp_count / max(1, self.episode_count)
 
         logger.info(
-            f"Timestep {self.timesteps}/{self.total_timesteps} | "
-            f"Actions: {action_dist} | "
-            f"FNR (Missed Harm): {fn_rate:.2%} | "
-            f"FPR (False Block): {fp_rate:.2%}"
+            f"Timestep {self.timesteps} | "
+            f"Actions: ALLOW={action_dist[0]:.3f} PAUSE={action_dist[1]:.3f} BLOCK={action_dist[2]:.3f} | "
+            f"FN Rate: {fn_rate:.4f} FP Rate: {fp_rate:.4f}"
         )
+
+        # Wandb logging if available
+        try:
+            import wandb
+            if wandb.run:
+                wandb.log({
+                    "gate/timestep": self.timesteps,
+                    "gate/allow_ratio": action_dist[0],
+                    "gate/pause_ratio": action_dist[1],
+                    "gate/block_ratio": action_dist[2],
+                    "gate/fn_rate": fn_rate,
+                    "gate/fp_rate": fp_rate,
+                    "gate/fn_fp_ratio": fn_rate / max(fp_rate, 1e-8),
+                })
+        except ImportError:
+            pass
 
     def _save_checkpoint(self, suffix: str = ""):
         """Save gate checkpoint."""
-        filename = f"gate_checkpoint_{self.timesteps}{suffix}.pt" if suffix == "" else f"gate_best{suffix}.pt"
-        path = self.checkpoint_dir / filename
-        # self.optimizer is always a plain torch.optim.AdamW (constructed
-        # directly above) -- the `hasattr(self.optimizer, "optimizer")`
-        # branch was dead defensive code for an LR-scheduler-wrapper type
-        # that is never used here.
-        save_checkpoint(
-            {
-                "model_state_dict": self.gate.state_dict(),
-                "optimizer_state_dict": self.optimizer.state_dict(),
-                "timestep": self.timesteps,
-                "config": OmegaConf.to_container(self.config) if isinstance(self.config, DictConfig) else self.config,
-            },
-            path,
-        )
+        checkpoint = {
+            "timestep": self.timesteps,
+            "model_state_dict": self.gate.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "config": self.config,
+            "action_counts": self.action_counts,
+            "fn_count": self.fn_count,
+            "fp_count": self.fp_count,
+        }
+
+        path = self.checkpoint_dir / f"gate_{self.timesteps}{suffix}.pt"
+        torch.save(checkpoint, path)
+
+        # Latest checkpoint
+        latest = self.checkpoint_dir / "latest.pt"
+        if latest.exists() or latest.is_symlink():
+            try:
+                latest.unlink()
+            except Exception:
+                pass
+        try:
+            latest.symlink_to(path.name)
+        except (OSError, NotImplementedError, Exception):
+            shutil.copy2(path, latest)
+
+        logger.info(f"Gate checkpoint saved: {path}")
+
+    @classmethod
+    def from_pretrained(cls, checkpoint_path: str, config: DictConfig, device: str = "cuda"):
+        """Load trainer from checkpoint."""
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+
+        # Recreate models
+        sentinel = create_sentinel_model(config)
+        gate = create_decision_gate(OmegaConf.to_container(config))
+
+        trainer = cls(config, sentinel, gate, None, None, None, device)
+
+        trainer.gate.load_state_dict(checkpoint["model_state_dict"])
+        trainer.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        trainer.timesteps = checkpoint["timestep"]
+
+        return trainer
 
 
-def train_gate_rl(config: Optional[Union[DictConfig, dict]] = None) -> dict:
+def train_gate_rl(config: DictConfig) -> DictConfig:
     """Main entry point for gate RL training."""
-    if config is None:
-        config = OmegaConf.load("configs/gate_rl.yaml")
-
     setup_logging(config.get("log_level", "INFO"))
     logger.info("=" * 60)
     logger.info("SENTINEL-Vision Gate RL Training")
     logger.info("=" * 60)
 
     device = config.get("device", "cuda" if torch.cuda.is_available() else "cpu")
-    logger.info(f"Using device: {device}")
 
-    # Build default full configuration
-    default_config = OmegaConf.create({
-        "model": {
-            "backbone": "vit_small_patch16_224",
-            "embed_dim": 384,
-            "pretrained": False,
-            "temporal": {
-                "embed_dim": 384,
-                "num_layers": 3,
-                "num_heads": 4,
-                "mlp_ratio": 4.0,
-                "dropout": 0.1,
-                "max_frames": 8,
-                "use_delta": True,
-                "fusion_mode": "last",
-            },
-            "risk_head": {
-                "embed_dim": 384,
-                "hidden_dim": 64,
-                "num_categories": 5,
-                "dropout": 0.1,
-            },
-            "localization_head": {
-                "embed_dim": 384,
-                "fm_size": 14,
-                "num_anchors": 9,
-                "anchor_sizes": [32, 64, 128, 256],
-            },
-        },
-        "data": {
-            "data_dir": "data/processed",
-            "frame_window_k": 6,
-            "target_resolution": [224, 224],
-        },
-        "frame_window": {
-            "k": 6,
-            "resolution": [224, 224],
-        },
-        "training": {
-            "batch_size": 16,
-            "num_workers": 0 if os.name == "nt" else 4,
-            "total_timesteps": 10000,
-            "eval_freq": 2000,
-            "save_freq": 5000,
-        },
-        "gate": {
-            "state_dim": 8,
-            "hidden_dim": 128,
-            "num_actions": 3,
-        },
-        "reward": {
-            "correct_allow": 1.0,
-            "false_block": -1.0,
-            "missed_harm": -10.0,
-            "correct_pause": 0.5,
-            "correct_block": 2.0,
-        },
-        "ppo": {
-            "learning_rate": 1.0e-5,
-            "batch_size": 32,
-            "n_epochs": 4,
-            "clip_epsilon": 0.2,
-            "gamma": 0.99,
-            "gae_lambda": 0.95,
-            "ent_coef": 0.01,
-            "vf_coef": 0.5,
-            "max_grad_norm": 0.5,
-        }
-    })
+    # Load pretrained SENTINEL model
+    sentinel_checkpoint = config.get("sentinel_checkpoint", "checkpoints/stage_c/best.pt")
+    logger.info(f"Loading SENTINEL from: {sentinel_checkpoint}")
 
-    full_config = OmegaConf.merge(default_config, config)
-
-    # Locate pretrained SENTINEL model checkpoint
-    sentinel_checkpoint = full_config.get("sentinel_checkpoint", None)
-    if not sentinel_checkpoint or not os.path.exists(sentinel_checkpoint):
-        for candidate in [
-            DEFAULT_SENTINEL_CHECKPOINT,
-            "checkpoints/stage_b_30epochs/best.pt",
-        ]:
-            if os.path.exists(candidate):
-                sentinel_checkpoint = candidate
-                break
-
-    if not sentinel_checkpoint or not os.path.exists(sentinel_checkpoint):
-        logger.warning(
-            "No SENTINEL checkpoint found -- training the gate against an "
-            "UNTRAINED sentinel model. The gate would learn a policy over "
-            "meaningless random risk scores. Refusing to proceed silently; "
-            "pass sentinel_checkpoint explicitly if this is intentional "
-            "(e.g. an architecture smoke test)."
-        )
-        raise FileNotFoundError(
-            "No sentinel checkpoint found under checkpoints/. Set "
-            "config.sentinel_checkpoint or train a stage model first."
-        )
-    else:
-        logger.info(f"Loading SENTINEL from: {sentinel_checkpoint}")
-        try:
-            checkpoint = load_checkpoint(sentinel_checkpoint, map_location=device)
-        except CheckpointLoadError:
-            logger.warning(
-                "'%s' failed restricted (weights_only) load; retrying with "
-                "allow_unsafe=True because it is a locally-trained checkpoint.",
-                sentinel_checkpoint,
-            )
-            checkpoint = load_checkpoint(sentinel_checkpoint, map_location=device, allow_unsafe=True)
-        ckpt_config = checkpoint.get("config", {})
-        if ckpt_config:
-            if isinstance(ckpt_config, dict):
-                model_cfg = OmegaConf.create(ckpt_config)
-            else:
-                model_cfg = ckpt_config
-            model_cfg = OmegaConf.merge(full_config, model_cfg)
-        else:
-            model_cfg = full_config
-        sentinel = create_sentinel_model(model_cfg)
-        state_dict = checkpoint.get("model_state_dict", checkpoint)
-        sentinel.load_state_dict(state_dict)
-        sentinel = sentinel.to(device).eval()
+    sentinel = create_sentinel_model(config)
+    checkpoint = torch.load(sentinel_checkpoint, map_location=device)
+    sentinel.load_state_dict(checkpoint["model_state_dict"])
+    sentinel = sentinel.to(device).eval()
 
     # Create gate
-    gate_config_dict = OmegaConf.to_container(full_config.get("gate", default_config.gate), resolve=True)
-    gate = create_decision_gate(gate_config_dict).to(device)
+    gate = create_decision_gate(OmegaConf.to_container(config)).to(device)
 
     # Create reward
-    reward_config_dict = OmegaConf.to_container(full_config, resolve=True)
-    reward_fn = create_reward_function(reward_config_dict)
+    reward_fn = create_reward_function(OmegaConf.to_container(config))
 
-    # Create data loader
-    val_transform = create_val_transform(reward_config_dict)
+    # Create data loaders (use validation set for RL to avoid overfitting)
+    from ..data.augmentation import create_val_transform
+    val_transform = create_val_transform(OmegaConf.to_container(config))
 
     val_dataset = SentinelDataset(
-        data_config=reward_config_dict,
+        data_config=OmegaConf.to_container(config),
         split="val",
         transform=val_transform,
-        frame_window_k=full_config.frame_window.k,
-        target_resolution=tuple(full_config.frame_window.resolution),
+        frame_window_k=config.frame_window.k,
+        target_resolution=tuple(config.frame_window.resolution),
     )
 
     val_loader = DataLoader(
         val_dataset,
-        batch_size=full_config.training.get("batch_size", 16),
+        batch_size=config.training.get("batch_size", 16),
         shuffle=True,
-        num_workers=full_config.training.get("num_workers", 0),
-        pin_memory=True if device == "cuda" else False,
+        num_workers=config.training.get("num_workers", 4),
+        pin_memory=True,
         collate_fn=collate_frame_windows,
     )
 
+    # Use same loader for train (we're training gate, not sentinel)
+    train_loader = val_loader
+
+    # Create trainer
     trainer = PPOTrainer(
-        config=full_config,
+        config=config,
         sentinel_model=sentinel,
         gate=gate,
         reward_fn=reward_fn,
-        train_loader=val_loader,
+        train_loader=train_loader,
         val_loader=val_loader,
         device=device,
     )
 
+    # Train
     results = trainer.train()
+
     return results
 
 
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description="Train SENTINEL-Vision Decision Gate via PPO")
-    parser.add_argument("--config", type=str, default="configs/gate_rl.yaml", help="Path to config file")
-    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Compute device")
-    args = parser.parse_args()
+    import hydra
+    from omegaconf import DictConfig
 
-    cfg = OmegaConf.load(args.config) if os.path.exists(args.config) else OmegaConf.create({})
-    cfg.device = args.device
-    train_gate_rl(cfg)
+    @hydra.main(version_base=None, config_path="../../configs", config_name="gate_rl")
+    def main(config: DictConfig):
+        train_gate_rl(config)
+
+    main()

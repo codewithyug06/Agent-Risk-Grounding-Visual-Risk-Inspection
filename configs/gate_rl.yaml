@@ -23,14 +23,9 @@ gate_actions:
   - "PAUSE"
   - "HARD_BLOCK"
 
-# NOTE: create_decision_gate() (src/gate/decision_gate.py) reads these from
-# a nested "gate:" key, not from top-level keys -- they used to live at the
-# top level here and were silently ignored (train_gate_rl.py's built-in
-# default_config.gate values were used instead, which happened to match).
-gate:
-  state_dim: 8
-  hidden_dim: 128
-  num_actions: 3
+state_dim: 8
+hidden_dim: 128
+num_actions: 3
 
 training:
   total_timesteps: 100000
