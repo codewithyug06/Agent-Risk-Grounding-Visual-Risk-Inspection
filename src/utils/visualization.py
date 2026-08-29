@@ -1,6 +1,5 @@
-"""
-Visualization utilities for SENTINEL-Vision.
-"""
+
+
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
