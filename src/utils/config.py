@@ -1,6 +1,3 @@
-"""
-Configuration loading utilities for SENTINEL-Vision.
-"""
 
 import json
 import logging
