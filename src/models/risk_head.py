@@ -1,8 +1,3 @@
-"""
-Risk Head for SENTINEL-Vision.
-Produces binary risk score (0-1) and 5-class category classification from fused representation.
-"""
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
