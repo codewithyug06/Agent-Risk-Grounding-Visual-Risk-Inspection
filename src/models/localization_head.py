@@ -1,9 +1,3 @@
-"""
-Localization Head for SENTINEL-Vision.
-Predicts bounding box of risky UI element using spatial patch embeddings.
-YOLO-style multi-scale anchor prediction + Grad-CAM heatmap generation.
-"""
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
