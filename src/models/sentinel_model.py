@@ -1,9 +1,3 @@
-"""
-Full SENTINEL-Vision Model.
-Assembles frame encoder, temporal fusion, risk head, and localization head.
-Provides clean inference API and ONNX export.
-"""
-
 import torch
 import torch.nn as nn
 from typing import Dict, List, Optional, Tuple, Union, Any
