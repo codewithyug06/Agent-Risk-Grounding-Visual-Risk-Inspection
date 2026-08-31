@@ -1,12 +1,3 @@
-"""
-Research Report and Paper Artifacts Generator for SENTINEL-Vision.
-Generates:
-1. Benchmark Comparison Tables (LaTeX + Markdown)
-2. 5 Ablation Study Tables (Temporal Window k, Gate vs Threshold, Real-only, Backbones, Cross-Agent)
-3. Latency & Throughput Performance Report (FP32 vs ONNX INT8)
-4. Adversarial Stress Testing Report
-5. Automatically formats and updates paper/draft.tex
-"""
 
 import os
 import json
