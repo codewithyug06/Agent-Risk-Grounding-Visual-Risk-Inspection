@@ -74,7 +74,7 @@ class SentinelTrainer:
         self.checkpoint_dir = Path(config.get("checkpoint_dir", f"checkpoints/{stage_name}"))
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
         self.best_metric = float("-inf")
-        self.checkpoint_metric = config.get("checkpoint_metric", "val_recall_harmful")
+        self.checkpoint_metric = config.get("checkpoint_metric", "recall_harmful")
         self.early_stopping_patience = config.get("early_stopping_patience", 5)
         self.early_stopping_counter = 0
 

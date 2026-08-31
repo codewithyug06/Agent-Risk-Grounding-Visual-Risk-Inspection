@@ -138,6 +138,7 @@ def _iter_multimodal_mind2web(resolution: Tuple[int, int]):
                 "domain": ex.get("domain", ""),
                 "task": ex.get("confirmed_task", ""),
                 "split": split,
+                "bbox": bbox,
             }
             yield img, text, "multimodal_mind2web", meta
 
@@ -163,6 +164,7 @@ def _iter_screenspot(version: str, resolution: Tuple[int, int]):
             "data_type": ex.get("data_type", ""),
             "data_source": ex.get("data_source", ""),
             "split": split,
+            "bbox": bbox,
         }
         yield img, instr, f"screenspot_{version}", meta
 
