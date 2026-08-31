@@ -1,9 +1,3 @@
-"""
-Frame Encoder for SENTINEL-Vision.
-Wraps timm backbones (ViT-S, ConvNeXt-Tiny, DINOv2) to return patch-level spatial embeddings.
-CRITICAL: Input is ONLY pixels (frames). No agent logs, tool calls, or text.
-"""
-
 import torch
 import torch.nn as nn
 import timm
