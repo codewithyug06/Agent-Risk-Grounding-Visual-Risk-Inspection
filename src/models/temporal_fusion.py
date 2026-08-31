@@ -1,9 +1,3 @@
-"""
-Temporal Fusion Module for SENTINEL-Vision.
-Processes k frame embeddings through temporal self-attention with delta-sensitivity.
-Key design: Joint spatiotemporal attention across time AND space.
-"""
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
