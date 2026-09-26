@@ -26,6 +26,7 @@ from ..data.augmentation import create_val_transform
 from ..data.frame_windowing import collate_frame_windows
 from ..gate.decision_gate import DecisionGate
 from .metrics import compute_safety_metrics, compute_latency
+from ..utils.checkpoint import load_checkpoint
 
 logger = logging.getLogger(__name__)
 
@@ -329,23 +330,24 @@ class AdversarialAttacker:
 
         self.model.eval()
 
-        with torch.no_grad():
-            for batch in val_loader:
-                batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v
-                         for k, v in batch.items()}
+        for batch in val_loader:
+            batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v
+                     for k, v in batch.items()}
 
-                frames = batch["frames"]
-                labels = batch["risk_label"]
+            frames = batch["frames"]
+            labels = batch["risk_label"]
 
-                # Apply attack
+            # Apply attack (needs gradient for PGD/FGSM)
+            with torch.enable_grad():
                 frames_adv = attack_fn(frames)
 
-                # Model forward
+            # Model forward
+            with torch.no_grad():
                 output = self.model(frames_adv)
                 scores = output["risk_score"].squeeze(-1).cpu().numpy()
 
-                all_scores.append(scores)
-                all_labels.append(labels.cpu().numpy())
+            all_scores.append(scores)
+            all_labels.append(labels.cpu().numpy())
 
         return np.concatenate(all_scores), np.concatenate(all_labels)
 
@@ -413,17 +415,23 @@ class StressTestRunner:
         logger.info(f"Loading model from: {checkpoint_path}")
 
         model = create_sentinel_model(self.config)
-        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        checkpoint = load_checkpoint(checkpoint_path, map_location=self.device)
         model.load_state_dict(checkpoint["model_state_dict"])
 
         # Load gate if available
         gate = None
-        gate_path = self.config.get("gate_checkpoint", "checkpoints/gate/latest.pt")
-        if Path(gate_path).exists():
-            logger.info(f"Loading gate from: {gate_path}")
-            gate = DecisionGate()
-            gate_checkpoint = torch.load(gate_path, map_location=self.device)
-            gate.load_state_dict(gate_checkpoint["model_state_dict"])
+        gate_paths = [
+            self.config.get("gate_checkpoint", "checkpoints/gate_rl.pt"),
+            "checkpoints/gate_rl/latest.pt",
+            "checkpoints/gate/latest.pt",
+        ]
+        for gp in gate_paths:
+            if gp and Path(gp).exists():
+                logger.info(f"Loading gate from: {gp}")
+                gate = DecisionGate()
+                gate_checkpoint = load_checkpoint(gp, map_location=self.device)
+                gate.load_state_dict(gate_checkpoint["model_state_dict"])
+                break
 
         # Create validation loader
         val_transform = create_val_transform(OmegaConf.to_container(self.config))
@@ -439,7 +447,7 @@ class StressTestRunner:
             val_dataset,
             batch_size=self.config.training.get("batch_size", 16),
             shuffle=False,
-            num_workers=self.config.training.get("num_workers", 4),
+            num_workers=self.config.training.get("num_workers", 0),
             pin_memory=True,
             collate_fn=collate_frame_windows,
         )
@@ -547,6 +555,7 @@ class StressTestRunner:
 def run_adversarial_stress_test(config: DictConfig, quick: bool = False) -> Dict[str, Any]:
     """Main entry point for adversarial stress testing."""
     device = config.get("device", "cuda" if torch.cuda.is_available() else "cpu")
+    quick = config.get("quick", quick)
     runner = StressTestRunner(config, device)
     return runner.run(quick=quick)
 

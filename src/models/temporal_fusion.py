@@ -98,14 +98,18 @@ class SpatiotemporalAttention(nn.Module):
         self,
         x: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
+        return_attn: bool = False,
     ) -> torch.Tensor:
         """
         Args:
             x: (B, k, N, D) - batch, frames, patches, embed_dim
             mask: Optional attention mask (B, k, N) or (B, k*N)
+            return_attn: If True, also return the (B, num_heads, k*N, k*N)
+                softmax attention weights. Forces the standard (non-flash)
+                attention path since flash attention doesn't expose weights.
 
         Returns:
-            Output: (B, k, N, D)
+            Output: (B, k, N, D), or (Output, attn_weights) if return_attn=True.
         """
         B, k, N, D = x.shape
 
@@ -117,7 +121,9 @@ class SpatiotemporalAttention(nn.Module):
         qkv = qkv.permute(2, 0, 3, 1, 4)  # (3, B, num_heads, k*N, head_dim)
         q, k_attn, v = qkv[0], qkv[1], qkv[2]
 
-        if self.use_flash_attn:
+        attn_weights = None
+
+        if self.use_flash_attn and not return_attn:
             # Use PyTorch's flash attention
             attn_mask = None
             if mask is not None:
@@ -132,7 +138,8 @@ class SpatiotemporalAttention(nn.Module):
                 is_causal=False,
             )
         else:
-            # Standard attention
+            # Standard attention (also used when return_attn=True, since flash
+            # attention does not expose its attention weight matrix).
             attn = (q @ k_attn.transpose(-2, -1)) * self.scale  # (B, num_heads, k*N, k*N)
 
             if mask is not None:
@@ -144,6 +151,9 @@ class SpatiotemporalAttention(nn.Module):
             attn = F.softmax(attn, dim=-1)
             attn = self.attn_drop(attn)
 
+            if return_attn:
+                attn_weights = attn.detach()
+
             out = attn @ v  # (B, num_heads, k*N, head_dim)
 
         out = out.transpose(1, 2).reshape(B, k * N, D)
@@ -152,6 +162,9 @@ class SpatiotemporalAttention(nn.Module):
 
         # Reshape back to spatiotemporal
         out = out.view(B, k, N, D)
+
+        if return_attn:
+            return out, attn_weights
         return out
 
 
@@ -336,6 +349,61 @@ class TemporalFusion(nn.Module):
             fused = x[:, -1, :, :]
 
         return fused
+
+    def forward_with_attention(
+        self,
+        frame_embeddings: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, list]:
+        """
+        Same computation as forward(), but also returns the per-block,
+        head-averaged self-attention matrices (used for Attention Rollout).
+        Does not use forward hooks: TemporalFusionBlock.forward() only ever
+        returns a plain tensor (required for normal training), so capturing
+        attention here re-executes each block's attention + MLP explicitly
+        with return_attn=True instead of monkey-patching the block, avoiding
+        any risk of corrupting the block's normal forward contract.
+
+        Args:
+            frame_embeddings: (B, k, N_patches, D)
+            mask: Optional mask (B, k) or (B, k, N)
+
+        Returns:
+            (fused_representation, [attn_1, ..., attn_L]) where each attn_i is
+            (B, k*N, k*N), averaged over attention heads.
+        """
+        B, k, N, D = frame_embeddings.shape
+
+        x = self.temporal_pos_enc(frame_embeddings)
+
+        if self.use_delta_features and k > 1:
+            delta_features = self.delta_extractor(frame_embeddings)
+            delta_padded = F.pad(delta_features, (0, 0, 0, 0, 1, 0))
+            x = torch.cat([x, delta_padded], dim=-1)
+            x = self.delta_proj(x)
+
+        attn_matrices = []
+        for block in self.blocks:
+            normed = block.norm1(x)
+            attn_out, attn_weights = block.attn(normed, mask, return_attn=True)
+            x = x + block.drop_path(attn_out)
+            x = x + block.drop_path(block.mlp(block.norm2(x)))
+            attn_matrices.append(attn_weights.mean(dim=1))  # average heads -> (B, k*N, k*N)
+
+        x = self.norm(x)
+
+        if self.fusion_mode == "last":
+            fused = x[:, -1, :, :]
+        elif self.fusion_mode == "mean":
+            fused = x.mean(dim=1)
+        elif self.fusion_mode == "attn_pool":
+            attn_pool_weights = self.attn_pool(x).squeeze(-1)
+            attn_pool_weights = F.softmax(attn_pool_weights, dim=1)
+            fused = (x * attn_pool_weights.unsqueeze(-1)).sum(dim=1)
+        else:
+            fused = x[:, -1, :, :]
+
+        return fused, attn_matrices
 
     def compute_delta_features(self, frames: torch.Tensor) -> torch.Tensor:
         """

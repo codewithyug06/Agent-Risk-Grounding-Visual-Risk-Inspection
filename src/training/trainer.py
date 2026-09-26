@@ -13,6 +13,7 @@ from typing import Dict, Any, Optional, Callable, List, Tuple
 from pathlib import Path
 import logging
 from omegaconf import DictConfig, OmegaConf
+from PIL import Image
 import hydra
 
 try:
@@ -50,7 +51,11 @@ class SentinelTrainer:
         scheduler: Optional[torch.optim.lr_scheduler.LRScheduler] = None,
         device: str = "cuda",
         stage_name: str = "stage_a",
+        trained_with_injection: bool = False,
+        dataset_stats: Optional[Dict[str, Any]] = None,
     ):
+        self.trained_with_injection = trained_with_injection
+        self.dataset_stats = dataset_stats or {}
         self.config = config
         self.model = model.to(device)
         self.train_loader = train_loader
@@ -150,6 +155,9 @@ class SentinelTrainer:
                 self.history["val_recall_harmful"].append(val_metrics["recall_harmful"])
                 self.history["val_localization_iou"].append(val_metrics.get("localization_iou", 0.0))
 
+                self._save_metrics_csv(epoch, train_metrics, val_metrics)
+                self._save_sample_visualizations(epoch)
+
                 # Checkpointing
                 metric_value = val_metrics.get(self.checkpoint_metric, val_metrics["loss"])
                 if metric_value > self.best_metric:
@@ -174,8 +182,16 @@ class SentinelTrainer:
             if self.scheduler is not None:
                 self.scheduler.step()
 
-        # Save final checkpoint
-        self._save_checkpoint(self.epochs, self.history, is_best=False, suffix="_final")
+        # Save final checkpoint. Use the loop's actual last `epoch` (which may
+        # be less than self.epochs if early stopping broke the loop early)
+        # and that epoch's own metrics dict, not the full multi-epoch history
+        # — a checkpoint's `metrics` field must describe that one checkpoint.
+        self._save_checkpoint(
+            epoch,
+            val_metrics if 'val_metrics' in locals() else {},
+            is_best=False,
+            suffix="_final",
+        )
 
         logger.info(f"Training completed. Best {self.checkpoint_metric}: {self.best_metric:.4f}")
         return {"best_metric": self.best_metric, "history": self.history}
@@ -418,6 +434,98 @@ class SentinelTrainer:
 
         return inter / union if union > 0 else 0.0
 
+    def _save_metrics_csv(
+        self,
+        epoch: int,
+        train_metrics: Dict[str, float],
+        val_metrics: Dict[str, float],
+    ):
+        """Append this epoch's metrics as one row to <checkpoint_dir>/metrics.csv."""
+        import csv
+
+        csv_path = self.checkpoint_dir / "metrics.csv"
+        row = {
+            "epoch": epoch,
+            "train_loss": train_metrics.get("loss", ""),
+            "val_loss": val_metrics.get("loss", ""),
+            "val_risk_precision": val_metrics.get("risk_precision", ""),
+            "val_risk_recall": val_metrics.get("risk_recall", ""),
+            "val_risk_f1": val_metrics.get("risk_f1", ""),
+            "val_recall_harmful": val_metrics.get("recall_harmful", ""),
+            "val_category_accuracy": val_metrics.get("category_accuracy", ""),
+            "val_localization_iou": val_metrics.get("localization_iou", ""),
+            "lr": self.optimizer.param_groups[0]["lr"],
+        }
+        write_header = not csv_path.exists()
+        with open(csv_path, "a", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(row.keys()))
+            if write_header:
+                writer.writeheader()
+            writer.writerow(row)
+
+    def _save_sample_visualizations(self, epoch: int, n_samples: int = 8):
+        """
+        Save prediction-overlay PNGs (risk score, category, bbox) for a
+        handful of validation samples to
+        <checkpoint_dir>/images/epoch_{epoch:03d}/sample_{i}.png, so training
+        progress can be inspected visually, not just via scalar metrics.
+        """
+        from ..utils.visualization import visualize_predictions
+
+        out_dir = self.checkpoint_dir / "images" / f"epoch_{epoch:03d}"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        category_names = ["destructive", "financial", "privacy", "irreversible_external", "benign"]
+
+        self.model.eval()
+        saved = 0
+        with torch.no_grad():
+            for batch in self.val_loader:
+                frames = batch["frames"].to(self.device)  # (B, k, C, H, W)
+                predictions = self.model(frames)
+
+                last_frame = frames[:, -1]  # (B, C, H, W) — most recent frame in the window
+                risk_scores = predictions["risk_score"].squeeze(-1).cpu()
+                category_probs = predictions["category_probs"].cpu()
+                bboxes = predictions["bbox"].cpu()
+
+                for i in range(last_frame.shape[0]):
+                    if saved >= n_samples:
+                        break
+
+                    img_t = last_frame[i].cpu()
+                    img_min, img_max = img_t.min(), img_t.max()
+                    img_norm = (img_t - img_min) / (img_max - img_min + 1e-8)
+                    img = Image.fromarray((img_norm.permute(1, 2, 0).numpy() * 255).astype("uint8"))
+
+                    cat_idx = int(category_probs[i].argmax().item())
+                    # Early-training bbox regressions can have x2<x1 or y2<y1
+                    # (or fall outside [0,1]) before the model has converged;
+                    # sort and clip so the overlay draw never crashes on them.
+                    bx1, by1, bx2, by2 = bboxes[i].tolist()
+                    bx1, bx2 = sorted((max(0.0, min(1.0, bx1)), max(0.0, min(1.0, bx2))))
+                    by1, by2 = sorted((max(0.0, min(1.0, by1)), max(0.0, min(1.0, by2))))
+                    if bx2 <= bx1:
+                        bx2 = min(1.0, bx1 + 1e-3)
+                    if by2 <= by1:
+                        by2 = min(1.0, by1 + 1e-3)
+
+                    vis = visualize_predictions(
+                        image=img,
+                        risk_score=float(risk_scores[i].item()),
+                        category=category_names[cat_idx],
+                        category_conf=float(category_probs[i, cat_idx].item()),
+                        bbox=(bx1, by1, bx2, by2),
+                        normalized=True,
+                    )
+                    vis.save(out_dir / f"sample_{saved}.png")
+                    saved += 1
+
+                if saved >= n_samples:
+                    break
+        self.model.train()
+        logger.info(f"Saved {saved} sample prediction images to {out_dir}")
+
     def _save_checkpoint(
         self,
         epoch: int,
@@ -426,16 +534,28 @@ class SentinelTrainer:
         suffix: str = "",
     ):
         """Save model checkpoint."""
+        config_dict = OmegaConf.to_container(self.config, resolve=True)
+        import hashlib
+        config_hash = hashlib.sha256(str(sorted(config_dict.items())).encode("utf-8")).hexdigest()[:16]
+
         checkpoint = {
             "epoch": epoch,
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
             "scheduler_state_dict": self.scheduler.state_dict() if self.scheduler else None,
             "scaler_state_dict": self.scaler.state_dict(),
-            "config": OmegaConf.to_container(self.config, resolve=True),
+            "config": config_dict,
             "metrics": metrics,
             "history": self.history,
             "stage": self.stage_name,
+            "metadata": {
+                "trained_with_injection": self.trained_with_injection,
+                "stage": self.stage_name,
+                "epoch": epoch,
+                "val_recall": metrics.get("recall_harmful", metrics.get("risk_recall", 0.0)),
+                "dataset_stats": self.dataset_stats,
+                "config_hash": config_hash,
+            },
         }
 
         if is_best:
@@ -460,7 +580,7 @@ class SentinelTrainer:
 
     def resume_from_checkpoint(self, checkpoint_path: str):
         """Resume training from checkpoint."""
-        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        checkpoint = load_checkpoint(checkpoint_path, map_location=self.device)
 
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -527,19 +647,23 @@ def create_data_loaders(
     config: DictConfig,
     train_dataset,
     val_dataset,
+    train_sampler: Optional[torch.utils.data.Sampler] = None,
 ) -> Tuple[DataLoader, DataLoader]:
-    """Create train and validation data loaders."""
+    """Create train and validation data loaders. If train_sampler is given
+    (e.g. a WeightedRandomSampler for harmful-class upsampling), it is used
+    instead of shuffle=True."""
     train_config = config.get("training", {})
 
     train_loader = DataLoader(
         train_dataset,
         batch_size=train_config.get("batch_size", 16),
-        shuffle=True,
+        shuffle=(train_sampler is None),
+        sampler=train_sampler,
         num_workers=train_config.get("num_workers", 4),
         pin_memory=train_config.get("pin_memory", True),
         collate_fn=collate_frame_windows,
         drop_last=True,
-        persistent_workers=True,
+        persistent_workers=train_config.get("num_workers", 4) > 0,
     )
 
     val_loader = DataLoader(
@@ -550,7 +674,7 @@ def create_data_loaders(
         pin_memory=train_config.get("pin_memory", True),
         collate_fn=collate_frame_windows,
         drop_last=False,
-        persistent_workers=True,
+        persistent_workers=train_config.get("num_workers", 4) > 0,
     )
 
     return train_loader, val_loader
@@ -558,3 +682,4 @@ def create_data_loaders(
 
 # Need to import math at top
 import math
+from ..utils.checkpoint import load_checkpoint

@@ -1,3 +1,8 @@
+defaults:
+  - model_small
+  - data
+  - _self_
+
 algorithm: "PPO"
 
 reward:
@@ -27,8 +32,13 @@ state_dim: 8
 hidden_dim: 128
 num_actions: 3
 
+sentinel_checkpoint: "checkpoints/stage_c/best.pt"
+checkpoint_dir: "checkpoints/gate_rl"
+device: "cuda"
+
 training:
-  total_timesteps: 100000
-  eval_freq: 10000
-  save_freq: 20000
-  n_envs: 4
+  total_timesteps: 5000
+  eval_freq: 1000
+  save_freq: 2500
+  batch_size: 16
+  num_workers: 0

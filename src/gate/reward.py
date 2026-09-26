@@ -203,14 +203,32 @@ class CurriculumReward:
         initial_ratio: float = 5.0,
         target_ratio: float = 10.0,
         ramp_epochs: int = 10,
+        n_episodes: Optional[int] = None,
+        initial_missed_harm: Optional[float] = None,
+        final_missed_harm: Optional[float] = None,
     ):
+        """
+        Two equivalent ways to configure the anneal schedule:
+        - epoch-based (original): initial_ratio/target_ratio/ramp_epochs,
+          advanced via set_epoch(epoch).
+        - episode-based (per spec): n_episodes/initial_missed_harm/
+          final_missed_harm (negative penalty values, e.g. -5.0 -> -10.0),
+          advanced via step() after each episode.
+        """
         if isinstance(base_reward, (int, float)):
             initial_ratio = float(base_reward)
             base_reward = None
 
+        if initial_missed_harm is not None:
+            initial_ratio = abs(initial_missed_harm)
+        if final_missed_harm is not None:
+            target_ratio = abs(final_missed_harm)
+
         self.initial_ratio = initial_ratio
         self.target_ratio = target_ratio
         self.ramp_epochs = ramp_epochs
+        self.n_episodes = n_episodes if n_episodes is not None else ramp_epochs
+        self.episode_count = 0
 
         if base_reward is not None:
             self.base_reward = base_reward
@@ -226,17 +244,29 @@ class CurriculumReward:
         self.current_epoch = 0
 
     def set_epoch(self, epoch: int):
-        """Update current epoch for curriculum."""
+        """Update current epoch for curriculum (epoch-based schedule)."""
         self.current_epoch = epoch
+
+    def step(self):
+        """Advance the curriculum by one episode (episode-based schedule)."""
+        self.episode_count += 1
+
+    def _current_ratio(self) -> float:
+        denom = max(self.n_episodes, 1)
+        progress = min(self.episode_count / denom, 1.0)
+        if self.episode_count == 0 and self.current_epoch > 0:
+            # Fall back to epoch-based progress if step() was never called.
+            progress = min(self.current_epoch / max(self.ramp_epochs, 1), 1.0)
+        return self.initial_ratio + progress * (self.target_ratio - self.initial_ratio)
+
+    @property
+    def current_missed_harm_penalty(self) -> float:
+        """Current (negative) missed-harm penalty value under the anneal schedule."""
+        return -self._current_ratio()
 
     def get_current_reward(self) -> AsymmetricReward:
         """Get reward with current asymmetry ratio."""
-        if self.current_epoch >= self.ramp_epochs:
-            ratio = self.target_ratio
-        else:
-            # Linear interpolation
-            progress = self.current_epoch / self.ramp_epochs
-            ratio = self.initial_ratio + progress * (self.target_ratio - self.initial_ratio)
+        ratio = self._current_ratio()
 
         return AsymmetricReward(
             correct_allow=self.base_reward.correct_allow,

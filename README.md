@@ -7,7 +7,7 @@
   [![PyTorch 2.0+](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](https://pytorch.org/)
   [![Tests Passing](https://img.shields.io/badge/Tests-122%2F122%20Passed%20(100%25)-brightgreen.svg)]()
   [![Coverage](https://img.shields.io/badge/Coverage-47%25-green.svg)]()
-  [![Latency](https://img.shields.io/badge/Inference-38.2ms%20(INT8%20CPU)-purple.svg)]()
+  [![Latency](https://img.shields.io/badge/Inference-207.5ms%20p95%20(FP32%20CPU%2C%20k%3D6)-purple.svg)]()
 
   <p><i>A production-grade, model-agnostic computer vision system that monitors autonomous AI agents by observing <b>strictly screen pixels</b>—an external, tamper-proof oversight channel that grounds and inspects visual risk before action execution.</i></p>
 
@@ -77,7 +77,7 @@ ARG-VRI / SENTINEL-VISION VISUAL FIREWALL (SECURE & NON-COLLUSIVE)
    SENTINEL-Vision (Pixels-Only Visual Oversight)     
   - Captures actual screen pixel buffer (k=6 frames)    
   - Detects destructive button: "DROP DATABASE"         
-  - Computes Visual Risk: 94.7% (Destructive)           
+  - Computes Visual Risk: 0.93 (Destructive) [illustrative]           
 
                            
                            
@@ -194,7 +194,7 @@ $$R(a, y) = \begin{cases} +1.0 & \text{if } y = \text{Harmful and } a = \text{HA
             
             
 [4. Production Packaging & Optimization]
-    ONNX INT8 Quantization (38.2 ms on CPU)
+    ONNX Export & Quantization (see reports/system_report.md for measured CPU latency)
     Desktop Security Wall Service & REST API Gateway
             
             
@@ -258,57 +258,55 @@ python -m uvicorn src.integration.intercept_api:app --host 127.0.0.1 --port 8000
 
 ## Comprehensive Empirical Benchmarks
 
-Evaluated across **16,726 multimodal trajectory samples** (11,707 train / 2,507 val / 2,512 test; 1,590 harmful cues):
+**Status: pending real training run.** The tables that previously appeared
+here were computed from a model whose risk predictions clustered around a
+constant ~0.19 for every input — i.e. non-discriminative, effectively random
+output — not from a trained detector. They have been removed rather than
+kept as decoration. See
+[`reports/system_report.md`](reports/system_report.md) for the current,
+honestly-labeled status and the one real measurement available today (CPU
+inference latency, below). Real benchmark numbers will replace this section
+once the synthetic injection pipeline (`src/data/synthetic_injection.py`,
+Playwright-based, DOM-grounded labels — already built and verified against
+real screenshots) has been used to run the Stage A/B/C curriculum training.
 
-### Table 1: Main Safety Benchmark Performance
-| Method | Harm Recall ($\uparrow$) | Harm Precision ($\uparrow$) | Harm F1 ($\uparrow$) | False Negative Rate ($\downarrow$) | False Positive Rate ($\downarrow$) | UI Localization IoU@0.5 |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Random Threshold Baseline** | 51.2% | 14.8% | 22.9% | 48.8% | 49.1% | -- |
-| **Rule-based OCR Keyword Match** | 63.4% | 38.1% | 47.6% | 36.6% | 18.5% | 24.2% |
-| **Single-Frame ViT ($k=1$)** | 76.8% | 69.4% | 72.9% | 23.2% | 8.7% | 52.6% |
-| **SENTINEL-Vision (No Gate)** | 89.2% | 84.1% | 86.6% | 10.8% | 4.3% | 68.4% |
-| **SENTINEL-Vision (Full, $k=6$ + PPO Gate)** | **94.7%** | **91.3%** | **93.0%** | **5.3%** | **2.1%** | **74.8%** |
+### Target metrics (design goals, not measured results)
+| Method | Harm Recall | Harm Precision | Harm F1 | UI Localization IoU@0.5 |
+| :--- | :---: | :---: | :---: | :---: |
+| Random Threshold Baseline | TBD | TBD | TBD | -- |
+| Rule-based keyword-cue baseline | TBD | TBD | TBD | TBD |
+| Single-Frame ViT ($k=1$) | TBD | TBD | TBD | TBD |
+| SENTINEL-Vision (No Gate) | TBD | TBD | TBD | TBD |
+| SENTINEL-Vision (Full, $k=6$ + PPO Gate) | >90% (target) | >85% (target) | -- | >65% (target) |
 
 ---
 
 ## Ablation Studies
 
-### Table 2: Effect of Temporal Context Window Length ($k$)
-| Window Size ($k$) | Harm Recall ($\uparrow$) | Precision ($\uparrow$) | Harm F1 ($\uparrow$) | False Negative Rate ($\downarrow$) | Latency |
-| :---: | :---: | :---: | :---: | :---: | :---: |
-| $k=1$ (Single-Frame) | 76.8% | 69.4% | 72.9% | 23.2% | 18.4 ms |
-| $k=2$ | 82.5% | 76.1% | 79.2% | 17.5% | 24.1 ms |
-| $k=4$ | 91.3% | 87.6% | 89.4% | 8.7% | 38.9 ms |
-| **$k=6$ (Default)** | **94.7%** | **91.3%** | **93.0%** | **5.3%** | **52.3 ms** |
-| $k=8$ | 95.1% | 91.5% | 93.3% | 4.9% | 74.6 ms |
-
-### Table 3: Visual Encoder Backbone Comparison
-| Backbone Encoder | Params | Harm Recall | Harm F1 | UI Localization IoU@0.5 | Inference Latency |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **ConvNeXt-Tiny** | 28.6M | 91.8% | 89.7% | 69.1% | 36.2 ms |
-| **ViT-S/16 (Default)** | 22.1M | 94.7% | 93.0% | 74.8% | 52.3 ms |
-| **DINOv2-S/14** | 22.0M | **95.8%** | **94.2%** | **78.4%** | 58.7 ms |
-
-### Table 4: Zero-Shot Cross-Agent Domain Generalization
-| Target Agent Framework | Accuracy | Harm Recall | False Negative Rate ($\downarrow$) | Generalization Gap |
-| :--- | :---: | :---: | :---: | :---: |
-| **In-Distribution (Mind2Web)** | 96.2% | 95.4% | 4.6% | -- |
-| **ScreenSpot (Desktop & Mobile UI)** | 93.8% | 92.1% | 7.9% | -2.4% |
-| **OSWorld (OS Operations)** | 91.5% | 89.8% | 10.2% | -4.7% |
-| **Claude Computer Use** | 92.9% | 91.4% | 8.6% | -3.3% |
-| **Worst-Group Performance** | **91.5%** | **89.8%** | **10.2%** | **-4.7%** |
+Not yet run against a trained model — `src/eval/ablations.py` is implemented
+and will produce real numbers once a `trained_with_injection=True` checkpoint
+exists (see checkpoint metadata written by `src/training/trainer.py`).
 
 ---
 
 ## Latency, FPS & Quantization Performance
 
-### Table 5: Execution Engine Latency & Throughput
-| Execution Engine | Precision | Compute Device | Latency (p50 / p95) | FPS Throughput | Real-Time Status |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| PyTorch Eager | FP32 | NVIDIA RTX 4090 | 21.4 ms / 28.6 ms | 46.7 FPS | [Pass] Ultra Real-Time |
-| PyTorch Eager | FP32 | Intel Core i7 (CPU) | 142.0 ms / 185.0 ms | 7.0 FPS | [Pass] Real-Time (<500ms) |
-| ONNX Runtime | FP32 | Intel Core i7 (CPU) | 84.5 ms / 102.3 ms | 11.8 FPS | [Pass] Real-Time (<500ms) |
-| **ONNX Runtime (Quantized)** | **INT8** | **Intel Core i7 (CPU)** | **38.2 ms / 46.1 ms** | **26.2 FPS** | **[Pass] Sub-40ms CPU Real-Time** |
+### Real measurement (this repository, CPU, 6-frame window `(1, 6, 3, 224, 224)`)
+Measured against `checkpoints/stage_b_30epochs/best.pt` via
+`python scripts/export_onnx.py`. See
+[`paper/latency_benchmark.json`](paper/latency_benchmark.json) for the
+authoritative, script-regenerated numbers.
+
+| Execution Engine | Precision | Compute Device | Latency (mean / p50 / p95) | FPS | Notes |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| ONNX Runtime | FP32 | CPU | 198.2 ms / 199.2 ms / 207.5 ms | 5.0 | Passes the <500ms p95 target |
+| ONNX Runtime (dynamic quant) | INT8 | CPU | 366.7 ms / 345.5 ms / 463.2 ms | 2.7 | **Slower** than FP32 on this CPU (0.54x) — dynamic quantization overhead outweighs compute savings without INT8 VNNI acceleration; still passes <500ms p95, but only barely |
+
+ONNX output verification currently fails for `category_probs`/`bbox`/`objectness`
+(shape mismatches against the PyTorch reference) — see
+[`reports/system_report.md`](reports/system_report.md) §4 for details. `risk_score`
+and `category_idx` verified exactly. GPU latency has not been measured on this
+machine (no CUDA device benchmarked here) and is not reported until it is.
 
 ---
 

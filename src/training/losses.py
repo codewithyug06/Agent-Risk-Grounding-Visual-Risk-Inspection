@@ -374,6 +374,137 @@ class LocalizationLoss(nn.Module):
         return (1.0 - giou).mean()
 
 
+class AnchorMatchedLocalizationLoss(nn.Module):
+    """
+    Proper anchor-based detection loss for LocalizationHead's raw per-anchor
+    grids (bbox_pred_grid, objectness_logits_grid from SentinelModel.forward).
+
+    LocalizationHead.forward() selects its final "bbox" output via two
+    argmax() calls (best anchor per location, then best location overall).
+    argmax has zero gradient, so a loss computed only on that post-argmax
+    output can never teach the model *where* to look — only how to shape
+    the box at whatever location the (essentially frozen) objectness argmax
+    already picked. This is why localization IoU plateaued near-random
+    throughout Stage A/B/C and a dedicated fine-tuning pass using the same
+    post-argmax "bbox" output (15 epochs, val_iou 0.031 -> 0.031 -- no
+    improvement).
+
+    Standard fix (as in YOLO/SSD/RetinaNet): assign each ground-truth box to
+    its highest-IoU anchor (a fixed-geometry lookup, not part of the
+    forward computation graph, so this argmax needs no gradient), then
+    supervise ALL anchors' objectness (BCE, positive at the matched anchor)
+    and the matched anchor's raw box regression (GIoU+L1). Every term here
+    is a direct, differentiable function of the network's own linear
+    outputs — no argmax sits between the loss and the trainable weights.
+    """
+
+    def __init__(self, giou_weight: float = 1.0, l1_weight: float = 0.5, obj_weight: float = 1.0):
+        super().__init__()
+        self.giou_weight = giou_weight
+        self.l1_weight = l1_weight
+        self.obj_weight = obj_weight
+        # With fm_size=14 and num_anchors=9, there are 14*14*9=1764 anchors
+        # per sample and only 1 positive — an extreme ~1763:1 imbalance.
+        # Plain BCE is dominated by the trivial "predict low everywhere"
+        # negative-class solution in this regime (the exact problem Focal
+        # Loss was introduced to solve in RetinaNet); using it here instead.
+        self.obj_loss_fn = FocalLoss(alpha=0.75, gamma=2.0, reduction="mean")
+
+    @staticmethod
+    def _box_iou(boxes1: torch.Tensor, boxes2: torch.Tensor) -> torch.Tensor:
+        """Pairwise IoU. boxes1: (N,4), boxes2: (M,4) -> (N,M)."""
+        area1 = (boxes1[:, 2] - boxes1[:, 0]).clamp(min=0) * (boxes1[:, 3] - boxes1[:, 1]).clamp(min=0)
+        area2 = (boxes2[:, 2] - boxes2[:, 0]).clamp(min=0) * (boxes2[:, 3] - boxes2[:, 1]).clamp(min=0)
+        x1 = torch.max(boxes1[:, None, 0], boxes2[None, :, 0])
+        y1 = torch.max(boxes1[:, None, 1], boxes2[None, :, 1])
+        x2 = torch.min(boxes1[:, None, 2], boxes2[None, :, 2])
+        y2 = torch.min(boxes1[:, None, 3], boxes2[None, :, 3])
+        inter = (x2 - x1).clamp(min=0) * (y2 - y1).clamp(min=0)
+        union = area1[:, None] + area2[None, :] - inter
+        return inter / union.clamp(min=1e-8)
+
+    @staticmethod
+    def _giou_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        x1_i = torch.max(pred[:, 0], target[:, 0])
+        y1_i = torch.max(pred[:, 1], target[:, 1])
+        x2_i = torch.min(pred[:, 2], target[:, 2])
+        y2_i = torch.min(pred[:, 3], target[:, 3])
+        inter = (x2_i - x1_i).clamp(min=0) * (y2_i - y1_i).clamp(min=0)
+
+        area_p = (pred[:, 2] - pred[:, 0]).clamp(min=0) * (pred[:, 3] - pred[:, 1]).clamp(min=0)
+        area_t = (target[:, 2] - target[:, 0]).clamp(min=0) * (target[:, 3] - target[:, 1]).clamp(min=0)
+        union = area_p + area_t - inter
+
+        iou = inter / union.clamp(min=1e-8)
+
+        x1_c = torch.min(pred[:, 0], target[:, 0])
+        y1_c = torch.min(pred[:, 1], target[:, 1])
+        x2_c = torch.max(pred[:, 2], target[:, 2])
+        y2_c = torch.max(pred[:, 3], target[:, 3])
+        area_c = (x2_c - x1_c).clamp(min=1e-8) * (y2_c - y1_c).clamp(min=1e-8)
+
+        giou = iou - (area_c - union) / area_c
+        return (1 - giou).mean()
+
+    def forward(
+        self,
+        bbox_pred_grid: torch.Tensor,
+        objectness_logits_grid: torch.Tensor,
+        anchors: torch.Tensor,
+        gt_bbox_pixel: torch.Tensor,
+        has_bbox: torch.Tensor,
+        image_size: int,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Args:
+            bbox_pred_grid: (B, H, W, A, 4) raw pixel-coord box predictions
+            objectness_logits_grid: (B, H, W, A) raw objectness logits
+            anchors: (H*W*A, 4) fixed anchor geometry in pixel coords
+                (SentinelModel().localization_head.anchors)
+            gt_bbox_pixel: (B, 4) ground-truth boxes in pixel coordinates
+            has_bbox: (B,) mask — samples without a ground-truth box are
+                skipped for both objectness and regression supervision
+            image_size: input image size in pixels (for GIoU normalization)
+        """
+        B, H, W, A, _ = bbox_pred_grid.shape
+        device = bbox_pred_grid.device
+        valid = has_bbox.view(-1).bool()
+
+        obj_logits_flat = objectness_logits_grid.view(B, H * W * A)
+        bbox_pred_flat = bbox_pred_grid.view(B, H * W * A, 4)
+
+        obj_target = torch.zeros_like(obj_logits_flat)
+        reg_pred, reg_target = [], []
+
+        if valid.any():
+            # Fixed-geometry lookup: no gradient needed or possible here,
+            # exactly like standard anchor-based detector target assignment.
+            with torch.no_grad():
+                ious = self._box_iou(anchors, gt_bbox_pixel[valid])  # (H*W*A, n_valid)
+                best_anchor_per_sample = ious.argmax(dim=0)  # (n_valid,)
+
+            valid_idx = valid.nonzero(as_tuple=True)[0]
+            for i, sample_idx in enumerate(valid_idx):
+                anchor_idx = best_anchor_per_sample[i].item()
+                obj_target[sample_idx, anchor_idx] = 1.0
+                reg_pred.append(bbox_pred_flat[sample_idx, anchor_idx])
+                reg_target.append(gt_bbox_pixel[sample_idx])
+
+        obj_loss = self.obj_loss_fn(obj_logits_flat, obj_target)
+
+        if reg_pred:
+            reg_pred = torch.stack(reg_pred) / image_size
+            reg_target = torch.stack(reg_target) / image_size
+            giou_loss = self._giou_loss(reg_pred, reg_target)
+            l1_loss = F.l1_loss(reg_pred, reg_target)
+        else:
+            giou_loss = torch.tensor(0.0, device=device)
+            l1_loss = torch.tensor(0.0, device=device)
+
+        total = self.obj_weight * obj_loss + self.giou_weight * giou_loss + self.l1_weight * l1_loss
+        return {"obj_loss": obj_loss, "giou_loss": giou_loss, "l1_loss": l1_loss, "total": total}
+
+
 class ContrastiveTemporalLoss(nn.Module):
     """
     InfoNCE Contrastive Temporal Loss for pretraining / regularizing temporal frame embeddings.

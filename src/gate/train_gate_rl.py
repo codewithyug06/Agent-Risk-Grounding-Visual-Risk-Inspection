@@ -4,15 +4,17 @@ Trains the gate policy using simulated episodes from the dataset.
 """
 
 import shutil
+from pathlib import Path
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import logging
 import numpy as np
 from collections import deque
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 import hydra
 
 from ..models.sentinel_model import SentinelModel, create_sentinel_model
@@ -22,6 +24,7 @@ from ..data.frame_windowing import collate_frame_windows
 from .decision_gate import DecisionGate, create_decision_gate
 from .reward import AsymmetricReward, create_reward_function
 from ..utils.logging import setup_logging
+from ..utils.checkpoint import load_checkpoint
 
 logger = logging.getLogger(__name__)
 
@@ -304,7 +307,11 @@ class PPOTrainer:
             "timestep": self.timesteps,
             "model_state_dict": self.gate.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
-            "config": self.config,
+            "config": (
+                OmegaConf.to_container(self.config, resolve=True)
+                if isinstance(self.config, DictConfig)
+                else self.config
+            ),
             "action_counts": self.action_counts,
             "fn_count": self.fn_count,
             "fp_count": self.fp_count,
@@ -325,12 +332,20 @@ class PPOTrainer:
         except (OSError, NotImplementedError, Exception):
             shutil.copy2(path, latest)
 
+        # Also copy to checkpoints/gate_rl.pt for standard root reference
+        try:
+            root_ckpt = Path("checkpoints/gate_rl.pt")
+            root_ckpt.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, root_ckpt)
+        except Exception:
+            pass
+
         logger.info(f"Gate checkpoint saved: {path}")
 
     @classmethod
     def from_pretrained(cls, checkpoint_path: str, config: DictConfig, device: str = "cuda"):
         """Load trainer from checkpoint."""
-        checkpoint = torch.load(checkpoint_path, map_location=device)
+        checkpoint = load_checkpoint(checkpoint_path, map_location=device)
 
         # Recreate models
         sentinel = create_sentinel_model(config)
@@ -343,6 +358,81 @@ class PPOTrainer:
         trainer.timesteps = checkpoint["timestep"]
 
         return trainer
+
+
+@torch.no_grad()
+def validate_sentinel_model_quality(
+    model: SentinelModel,
+    val_loader: DataLoader,
+    device: str = "cpu",
+    std_threshold: float = 0.1,
+    high_risk_threshold: float = 0.7,
+    min_high_risk_precision: float = 0.25,
+    max_samples: Optional[int] = 500,
+) -> Dict[str, Any]:
+    """
+    Checks whether the sentinel model's risk-score predictions carry a real
+    signal before letting RL gate training consume them. A gate trained on a
+    near-constant risk distribution (e.g. ~0.19 for every input) learns
+    nothing useful — this function is the guard against that failure mode.
+
+    Checks:
+    1. The predicted risk-score distribution has meaningful spread (std > std_threshold).
+    2. Predictions above high_risk_threshold are actually more likely to be
+       harmful than the base rate (precision on the high-risk subset).
+
+    Returns:
+        {is_valid, risk_score_std, high_risk_precision, n_high_risk, n_total}
+    """
+    model.eval()
+    all_scores = []
+    all_labels = []
+    n_processed = 0
+
+    for batch in val_loader:
+        frames = batch["frames"].to(device)
+        risk_labels = batch["risk_label"]
+        out = model(frames)
+        all_scores.append(out["risk_score"].squeeze(-1).cpu())
+        all_labels.append(risk_labels.float())
+        n_processed += frames.shape[0]
+        if max_samples and n_processed >= max_samples:
+            break
+
+    if not all_scores:
+        return {
+            "is_valid": False,
+            "risk_score_std": 0.0,
+            "high_risk_precision": 0.0,
+            "n_high_risk": 0,
+            "n_total": 0,
+            "reason": "validation set is empty",
+        }
+
+    scores = torch.cat(all_scores)
+    labels = torch.cat(all_labels)
+
+    risk_score_std = scores.std().item()
+
+    high_risk_mask = scores > high_risk_threshold
+    n_high_risk = int(high_risk_mask.sum().item())
+    if n_high_risk > 0:
+        high_risk_precision = (labels[high_risk_mask].sum() / n_high_risk).item()
+    else:
+        high_risk_precision = 0.0
+
+    is_valid = (
+        risk_score_std > std_threshold
+        and (n_high_risk == 0 or high_risk_precision >= min_high_risk_precision)
+    )
+
+    return {
+        "is_valid": is_valid,
+        "risk_score_std": risk_score_std,
+        "high_risk_precision": high_risk_precision,
+        "n_high_risk": n_high_risk,
+        "n_total": len(scores),
+    }
 
 
 def train_gate_rl(config: DictConfig) -> DictConfig:
@@ -359,7 +449,7 @@ def train_gate_rl(config: DictConfig) -> DictConfig:
     logger.info(f"Loading SENTINEL from: {sentinel_checkpoint}")
 
     sentinel = create_sentinel_model(config)
-    checkpoint = torch.load(sentinel_checkpoint, map_location=device)
+    checkpoint = load_checkpoint(sentinel_checkpoint, map_location=device)
     sentinel.load_state_dict(checkpoint["model_state_dict"])
     sentinel = sentinel.to(device).eval()
 
@@ -371,27 +461,52 @@ def train_gate_rl(config: DictConfig) -> DictConfig:
 
     # Create data loaders (use validation set for RL to avoid overfitting)
     from ..data.augmentation import create_val_transform
+    from ..training.curriculum_data import build_combined_dataset
     val_transform = create_val_transform(OmegaConf.to_container(config))
 
-    val_dataset = SentinelDataset(
-        data_config=OmegaConf.to_container(config),
-        split="val",
-        transform=val_transform,
-        frame_window_k=config.frame_window.k,
-        target_resolution=tuple(config.frame_window.resolution),
-    )
+    try:
+        val_dataset = build_combined_dataset(
+            config=config,
+            split="val",
+            transform=val_transform,
+        )
+    except Exception as e:
+        logger.warning(f"Combined dataset build failed ({e}), falling back to SentinelDataset")
+        val_dataset = SentinelDataset(
+            data_config=OmegaConf.to_container(config),
+            split="val",
+            transform=val_transform,
+            frame_window_k=config.frame_window.k,
+            target_resolution=tuple(config.frame_window.resolution),
+        )
 
     val_loader = DataLoader(
         val_dataset,
         batch_size=config.training.get("batch_size", 16),
         shuffle=True,
-        num_workers=config.training.get("num_workers", 4),
+        num_workers=config.training.get("num_workers", 0),
         pin_memory=True,
         collate_fn=collate_frame_windows,
     )
 
     # Use same loader for train (we're training gate, not sentinel)
     train_loader = val_loader
+
+    # Refuse to train the gate on a sentinel model with degenerate (constant)
+    # risk-score output — the gate can't learn a useful policy from a signal
+    # that doesn't discriminate harmful from benign.
+    quality = validate_sentinel_model_quality(sentinel, val_loader, device=device)
+    logger.info(f"Sentinel model quality check: {quality}")
+    if not quality["is_valid"]:
+        logger.error(
+            "Gate training requires a properly trained sentinel model. "
+            "Run injection pipeline and curriculum training first."
+        )
+        raise RuntimeError(
+            f"Sentinel model quality check failed: risk_score_std={quality['risk_score_std']:.4f} "
+            f"(need > 0.1), high_risk_precision={quality['high_risk_precision']:.4f} "
+            f"on {quality['n_high_risk']} high-risk samples. Refusing to train the gate."
+        )
 
     # Create trainer
     trainer = PPOTrainer(

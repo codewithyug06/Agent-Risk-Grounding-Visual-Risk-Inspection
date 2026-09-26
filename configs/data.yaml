@@ -1,8 +1,13 @@
-# SENTINEL-Vision data configuration (REAL-DATA ONLY).
-# All training data is sourced from the downloaded public datasets in ../Datasets,
-# preprocessed into data/processed/ by scripts/preprocess_real_data.py.
-# Synthetic injection (Playwright) has been removed. Harmful-positive signal comes
-# from weak keyword labeling of REAL action text (see src/data/loaders.py).
+# SENTINEL-Vision data configuration.
+# Real training data is sourced from the downloaded public datasets in ../Datasets,
+# preprocessed into data/processed/ by scripts/preprocess_real_data.py. Weak
+# harmful-positive signal on that data comes from keyword labeling of REAL
+# action text (see src/data/loaders.py).
+#
+# Synthetic injection (Playwright, DOM-grounded labels) is a separate, additive
+# data source — see src/data/synthetic_injection.py and
+# scripts/generate_synthetic_data.py — combined with the above via
+# CombinedSentinelDataset for curriculum training.
 
 # Path to the preprocessed, train-ready dataset produced by preprocessing.
 # Relative to the sentinel-vision/ project root.
@@ -44,6 +49,5 @@ augmentation:
   jpeg_noise: true
   temporal_dropout: 0.1
 
-num_workers: 4
+num_workers: 0
 pin_memory: true
-prefetch_factor: 2

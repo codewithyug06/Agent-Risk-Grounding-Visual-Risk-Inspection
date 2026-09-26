@@ -10,6 +10,7 @@ from .frame_encoder import FrameEncoder, create_frame_encoder
 from .temporal_fusion import TemporalFusion, create_temporal_fusion
 from .risk_head import RiskHead, create_risk_head
 from .localization_head import LocalizationHead, create_localization_head
+from ..utils.checkpoint import load_checkpoint
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +118,15 @@ class SentinelModel(nn.Module):
             "bbox": loc_output["bbox"],                        # (B, 4) normalized
             "bbox_pixel": loc_output["bbox_pixel"],            # (B, 4) pixels
             "objectness": loc_output["objectness_max"],        # (B,)
+            # Raw per-anchor grids, pre-argmax-selection. The post-argmax
+            # "bbox" above is not usefully trainable end-to-end (argmax over
+            # which anchor/location to use has zero gradient — only the box
+            # shape at whatever location was already selected gets a
+            # gradient signal, never *where* to look). These raw grids let a
+            # proper anchor-IoU-matched loss (AnchorMatchedLocalizationLoss
+            # in src/training/losses.py) supervise anchor selection too.
+            "bbox_pred_grid": loc_output["bbox_pred"],         # (B, H, W, A, 4) pixels
+            "objectness_logits_grid": loc_output["anchor_logits"][..., 0],  # (B, H, W, A)
             "heatmap": None,  # Generated on demand via generate_heatmap()
             "confidence": confidence,                          # (B,)
         }
@@ -381,19 +391,72 @@ class SentinelModel(nn.Module):
         frame_window: torch.Tensor,
     ) -> np.ndarray:
         """
-        Compute Transformer Attention Rollout for spatial/temporal explanation.
+        Compute Transformer Attention Rollout (Abnar & Zuidema, 2020) across all
+        temporal fusion blocks, for spatiotemporal explanation.
+
+        Algorithm:
+        1. For each temporal fusion block, get the head-averaged attention
+           matrix A (k*N, k*N).
+        2. Add identity (residual) and row-normalize: A_aug = norm(A + I).
+        3. Compose across blocks: R = A_L_aug @ ... @ A_1_aug.
+        4. This architecture has no CLS token (it fuses spatiotemporal patch
+           tokens directly), so per-token importance is the mean attention
+           each token receives from all others through the composed rollout:
+           importance[j] = mean_i R[i, j] (column mean of R).
+        5. Take the last frame's N patches, reshape to the encoder's spatial
+           grid, normalize to [0, 1], and resize to the model's image resolution.
 
         Args:
-            frame_window: (1, k, C, H, W) input frame tensor
+            frame_window: (1, k, C, H, W) or (k, C, H, W) input frame tensor.
+                Batch size must be 1.
         Returns:
-            Normalized 2D heatmap numpy array (H, W) in [0, 1]
+            Attention rollout heatmap (image_size, image_size) as np.ndarray in [0, 1].
         """
         if frame_window.dim() == 4:
             frame_window = frame_window.unsqueeze(0)
 
-        # Generate spatial attention heatmap via Grad-CAM / localization head
-        heatmap = self.generate_heatmap(frame_window)
-        return heatmap
+        if frame_window.shape[0] != 1:
+            raise ValueError(
+                f"generate_attention_rollout requires batch_size=1, got {frame_window.shape[0]}"
+            )
+
+        self.eval()
+        with torch.no_grad():
+            frame_embeddings = self.frame_encoder(frame_window)  # (1, k, N, D)
+            _, attn_matrices = self.temporal_fusion.forward_with_attention(frame_embeddings)
+
+            R = None
+            for attn in attn_matrices:  # blocks in order: block_1 .. block_L
+                A = attn[0]  # (k*N, k*N), batch size is 1
+                seq_len = A.shape[0]
+                identity = torch.eye(seq_len, device=A.device, dtype=A.dtype)
+                A_aug = A + identity
+                A_aug = A_aug / A_aug.sum(dim=-1, keepdim=True).clamp_min(1e-8)
+                R = A_aug if R is None else A_aug @ R
+
+            importance = R.mean(dim=0)  # (k*N,) — mean attention received per token
+
+            k = frame_embeddings.shape[1]
+            n_patches = frame_embeddings.shape[2]
+            last_frame_start = (k - 1) * n_patches
+            last_frame_importance = importance[last_frame_start:last_frame_start + n_patches]
+
+            grid_size = int(round(n_patches ** 0.5))
+            if grid_size * grid_size != n_patches:
+                raise RuntimeError(
+                    f"Cannot reshape {n_patches} patches into a square grid for rollout visualization."
+                )
+            spatial = last_frame_importance.reshape(grid_size, grid_size)
+
+            spatial = spatial - spatial.min()
+            spatial = spatial / spatial.max().clamp_min(1e-8)
+
+            spatial = spatial.unsqueeze(0).unsqueeze(0)  # (1, 1, grid, grid)
+            resized = torch.nn.functional.interpolate(
+                spatial, size=(self.image_size, self.image_size), mode="bilinear", align_corners=False
+            )
+
+        return resized.squeeze(0).squeeze(0).cpu().numpy()
 
     @classmethod
     def from_pretrained(cls, checkpoint_path: str, config: Optional[DictConfig] = None) -> 'SentinelModel':
@@ -407,7 +470,7 @@ class SentinelModel(nn.Module):
         Returns:
             Loaded SentinelModel
         """
-        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        checkpoint = load_checkpoint(checkpoint_path, map_location="cpu")
 
         if config is None:
             if "config" in checkpoint:

@@ -56,16 +56,19 @@ class FrameCapture:
 
     def capture(self, region: Optional[Tuple[int, int, int, int]] = None) -> Image.Image:
         """Capture screen region."""
-        if self.sct:
-            if region:
-                monitor = {"left": region[0], "top": region[1], "width": region[2], "height": region[3]}
-            else:
-                monitor = self.monitors[self.monitor_index + 1] if self.monitor_index + 1 < len(self.monitors) else self.monitors[0]
-            screenshot = self.sct.grab(monitor)
-            return Image.frombytes("RGB", screenshot.size, screenshot.rgb)
+        if self.sct is None:
+            raise RuntimeError(
+                "Screen capture is unavailable (mss failed to initialize, or no "
+                "display is attached). A safety monitor that silently substitutes "
+                "a blank frame on capture failure would report 'safe' for a screen "
+                "it never actually saw — refusing to do that instead."
+            )
+        if region:
+            monitor = {"left": region[0], "top": region[1], "width": region[2], "height": region[3]}
         else:
-            # Fallback - return blank
-            return Image.new("RGB", (1920, 1080), color="black")
+            monitor = self.monitors[self.monitor_index + 1] if self.monitor_index + 1 < len(self.monitors) else self.monitors[0]
+        screenshot = self.sct.grab(monitor)
+        return Image.frombytes("RGB", screenshot.size, screenshot.rgb)
 
     def capture_numpy(self, region: Optional[Tuple[int, int, int, int]] = None) -> np.ndarray:
         """Capture as numpy array (BGR for OpenCV)."""

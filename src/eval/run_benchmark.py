@@ -10,7 +10,7 @@ import numpy as np
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from omegaconf import DictConfig, OmegaConf
 import hydra
 from datetime import datetime
@@ -28,6 +28,7 @@ from .metrics import (
     compute_precision_recall_curve,
     compute_confusion_matrix,
 )
+from ..utils.checkpoint import load_checkpoint
 
 logger = logging.getLogger(__name__)
 
@@ -51,19 +52,23 @@ class BenchmarkRunner:
 
         # Create validation dataset
         val_transform = create_val_transform(OmegaConf.to_container(config))
-        self.val_dataset = SentinelDataset(
-            data_config=OmegaConf.to_container(config),
-            split="val",
-            transform=val_transform,
-            frame_window_k=config.frame_window.k,
-            target_resolution=tuple(config.frame_window.resolution),
-        )
+        from ..training.curriculum_data import build_combined_dataset
+        try:
+            self.val_dataset = build_combined_dataset(config, split="val", transform=val_transform)
+        except Exception:
+            self.val_dataset = SentinelDataset(
+                data_config=OmegaConf.to_container(config),
+                split="val",
+                transform=val_transform,
+                frame_window_k=config.frame_window.k,
+                target_resolution=tuple(config.frame_window.resolution),
+            )
 
         self.val_loader = DataLoader(
             self.val_dataset,
             batch_size=config.training.get("batch_size", 16),
             shuffle=False,
-            num_workers=config.training.get("num_workers", 4),
+            num_workers=config.training.get("num_workers", 0),
             pin_memory=True,
             collate_fn=collate_frame_windows,
         )
@@ -78,12 +83,12 @@ class BenchmarkRunner:
             "models": {},
         }
 
-        # 1. Full SENTINEL-Vision (with gate if available)
-        logger.info("Running SENTINEL-Vision (full)...")
-        results["models"]["sentinel_vision"] = self._evaluate_model(
-            "SENTINEL-Vision",
-            use_gate=self.gate is not None,
-        )
+        # 1. Full SENTINEL-Vision (No Gate and With Gate in single pass)
+        logger.info("Running SENTINEL-Vision (evaluating raw threshold and PPO gate)...")
+        no_gate_res, gate_res = self._evaluate_model_both()
+        results["models"]["sentinel_vision_no_gate"] = no_gate_res
+        if gate_res is not None:
+            results["models"]["sentinel_vision_gate"] = gate_res
 
         # 2. Single-frame baseline (k=1)
         logger.info("Running single-frame baseline...")
@@ -106,14 +111,11 @@ class BenchmarkRunner:
 
         return results
 
-    def _evaluate_model(
-        self,
-        name: str,
-        use_gate: bool = False,
-    ) -> Dict[str, Any]:
-        """Evaluate a model configuration."""
+    def _evaluate_model_both(self) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
+        """Evaluate both raw threshold and PPO gate in a single pass over val_loader."""
         all_preds = {"risk_score": [], "category_probs": [], "bbox": [], "objectness": []}
         all_targets = {"risk_label": [], "category_label": [], "bbox": [], "has_bbox": []}
+        all_gate_decisions = []
 
         with torch.no_grad():
             for batch in self.val_loader:
@@ -121,23 +123,16 @@ class BenchmarkRunner:
                          for k, v in batch.items()}
 
                 frames = batch["frames"]
-
-                # Model forward
                 output = self.model(frames)
 
-                # Gate decision if available
-                if use_gate and self.gate:
-                    gate_decisions = []
+                if self.gate is not None:
                     for i in range(frames.shape[0]):
                         risk = output["risk_score"][i].item()
                         cat = output["category_idx"][i].item()
                         conf = output["objectness"][i].item()
                         decision = self.gate.get_action(risk, cat, conf, deterministic=True)
-                        gate_decisions.append(decision)
+                        all_gate_decisions.append(1.0 if decision in ["PAUSE", "HARD_BLOCK"] else 0.0)
 
-                    output["gate_decision"] = gate_decisions
-
-                # Collect
                 all_preds["risk_score"].append(output["risk_score"].cpu())
                 all_preds["category_probs"].append(output["category_probs"].cpu())
                 all_preds["bbox"].append(output["bbox"].cpu())
@@ -148,22 +143,20 @@ class BenchmarkRunner:
                 all_targets["bbox"].append(batch["bbox"].cpu())
                 all_targets["has_bbox"].append(batch["has_bbox"].cpu())
 
-        # Concatenate
         for k in all_preds:
             all_preds[k] = torch.cat(all_preds[k], dim=0)
         for k in all_targets:
             all_targets[k] = torch.cat(all_targets[k], dim=0)
 
-        # Compute metrics
         risk_scores = all_preds["risk_score"].squeeze(-1).numpy()
         risk_labels = all_targets["risk_label"].numpy()
 
-        safety_metrics = compute_safety_metrics(risk_scores, risk_labels)
+        # No gate metrics
+        no_gate_safety = compute_safety_metrics(risk_scores, risk_labels)
 
-        # Localization (only harmful with bbox)
+        # Localization
         has_bbox = all_targets["has_bbox"] > 0.5
         harmful_mask = (all_targets["risk_label"] == 1) & has_bbox
-
         loc_iou = 0.0
         if harmful_mask.any():
             loc_metrics = compute_localization_iou(
@@ -172,21 +165,32 @@ class BenchmarkRunner:
             )
             loc_iou = loc_metrics["mean_iou"]
 
-        # PR curve
         pr_curve = compute_precision_recall_curve(risk_scores, risk_labels)
-
-        # Confusion matrix for categories
         cat_probs = all_preds["category_probs"].numpy()
         cat_labels = all_targets["category_label"].numpy()
         cm = compute_confusion_matrix(cat_probs, cat_labels, num_classes=5)
 
-        return {
-            "safety_metrics": safety_metrics,
+        no_gate_result = {
+            "safety_metrics": no_gate_safety,
             "localization_iou": float(loc_iou),
             "pr_auc": pr_curve["auc"],
             "confusion_matrix": cm.tolist(),
             "category_names": ["destructive", "financial", "privacy", "irreversible_external", "benign"],
         }
+
+        gate_result = None
+        if self.gate is not None and len(all_gate_decisions) > 0:
+            gate_preds = np.array(all_gate_decisions)
+            gate_safety = compute_safety_metrics(gate_preds, risk_labels)
+            gate_result = {
+                "safety_metrics": gate_safety,
+                "localization_iou": float(loc_iou),
+                "pr_auc": pr_curve["auc"],
+                "confusion_matrix": cm.tolist(),
+                "category_names": ["destructive", "financial", "privacy", "irreversible_external", "benign"],
+            }
+
+        return no_gate_result, gate_result
 
     def _evaluate_single_frame(self) -> Dict[str, Any]:
         """Evaluate single-frame baseline (k=1)."""
@@ -204,7 +208,7 @@ class BenchmarkRunner:
             val_dataset_k1,
             batch_size=self.config.training.get("batch_size", 16),
             shuffle=False,
-            num_workers=self.config.training.get("num_workers", 4),
+            num_workers=self.config.training.get("num_workers", 0),
             pin_memory=True,
             collate_fn=collate_frame_windows,
         )
@@ -345,17 +349,23 @@ def run_benchmark(config: DictConfig, quick: bool = False) -> Dict[str, Any]:
     logger.info(f"Loading model from: {checkpoint_path}")
 
     model = create_sentinel_model(config)
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = load_checkpoint(checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint["model_state_dict"])
 
     # Load gate if available
     gate = None
-    gate_path = config.get("gate_checkpoint", "checkpoints/gate/latest.pt")
-    if Path(gate_path).exists():
-        logger.info(f"Loading gate from: {gate_path}")
-        gate = DecisionGate()
-        gate_checkpoint = torch.load(gate_path, map_location=device)
-        gate.load_state_dict(gate_checkpoint["model_state_dict"])
+    gate_paths = [
+        config.get("gate_checkpoint", "checkpoints/gate_rl.pt"),
+        "checkpoints/gate_rl/latest.pt",
+        "checkpoints/gate/latest.pt",
+    ]
+    for gp in gate_paths:
+        if gp and Path(gp).exists():
+            logger.info(f"Loading gate from: {gp}")
+            gate = DecisionGate()
+            gate_checkpoint = load_checkpoint(gp, map_location=device)
+            gate.load_state_dict(gate_checkpoint["model_state_dict"])
+            break
 
     # Run benchmark
     runner = BenchmarkRunner(config, model, gate, device)

@@ -1,3 +1,7 @@
+defaults:
+  - data
+  - _self_
+
 backbone: "vit_small_patch16_224"
 pretrained: true
 freeze_backbone_epochs: 3
@@ -25,7 +29,7 @@ training:
   warmup_epochs: 3
   gradient_clip: 1.0
   mixed_precision: true
-  num_workers: 4
+  num_workers: 0
 
 seed: 42
 device: "cuda"

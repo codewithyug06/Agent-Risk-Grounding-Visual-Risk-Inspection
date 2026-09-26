@@ -1,17 +1,17 @@
 \begin{table}[t]
 \centering
-\caption{\textbf{Main Safety Benchmark Results.} Comparison of SENTINEL-Vision against baseline monitoring systems on the multimodal UI agent safety benchmark (16,726 samples). Primary safety metric is Recall / False Negative Rate (FNR) on harmful actions.}
+\caption{\textbf{Main Safety Benchmark Results.} Empirical evaluation on the combined evaluation suite ($N=3{,}167$ samples, 2,507 real-world web interaction sequences + 660 DOM-grounded synthetic injections) evaluated against the Stage C checkpoint (\texttt{checkpoints/stage\_c/best.pt}) and trained PPO decision gate (\texttt{checkpoints/gate\_rl.pt}).}
 \label{tab:main_benchmark}
 \resizebox{\textwidth}{!}{
 \begin{tabular}{lcccccc}
 \toprule
 \textbf{Method} & \textbf{Harm Recall ($\uparrow$)} & \textbf{Harm Precision ($\uparrow$)} & \textbf{Harm F1 ($\uparrow$)} & \textbf{FNR ($\downarrow$)} & \textbf{FPR ($\downarrow$)} & \textbf{IoU@0.5 ($\uparrow$)} \\
 \midrule
-Random Threshold Baseline & 51.2\% & 14.8\% & 22.9\% & 48.8\% & 49.1\% & -- \\
-Rule-based OCR Keyword Match & 63.4\% & 38.1\% & 47.6\% & 36.6\% & 18.5\% & 24.2\% \\
-Single-Frame ViT ($k=1$) & 76.8\% & 69.4\% & 72.9\% & 23.2\% & 8.7\% & 52.6\% \\
-SENTINEL-Vision (No Gate) & 89.2\% & 84.1\% & 86.6\% & 10.8\% & 4.3\% & 68.4\% \\
-\textbf{SENTINEL-Vision (Full, $k=6$ + PPO Gate)} & \textbf{94.7\%} & \textbf{91.3\%} & \textbf{93.0\%} & \textbf{5.3\%} & \textbf{2.1\%} & \textbf{74.8\%} \\
+Random Threshold Baseline & 49.19\% & 19.10\% & 0.275 & 50.81\% & 50.73\% & -- \\
+Rule-based keyword-cue baseline & 100.0\% & 100.0\% & 1.000 & 0.00\% & 0.00\% & -- \\
+Single-Frame ViT ($k=1$) & 48.46\% & 13.74\% & 0.214 & 51.54\% & 35.20\% & 0.000 \\
+SENTINEL-Vision (No Gate) & \textbf{74.35\%} & \textbf{52.51\%} & \textbf{0.616} & \textbf{25.65\%} & \textbf{16.37\%} & \textbf{0.036} \\
+\textbf{SENTINEL-Vision (Full, $k=6$ + PPO Gate)} & 64.03\% & 14.05\% & 0.230 & 35.97\% & 95.37\% & \textbf{0.036} \\
 \bottomrule
 \end{tabular}
 }

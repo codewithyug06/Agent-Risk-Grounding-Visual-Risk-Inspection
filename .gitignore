@@ -28,6 +28,7 @@ data/processed/frames/
 data/processed/*.jsonl
 data/processed/_samples.jsonl
 data/Dataset_Download.py
+data/synthetic_injections/
 HF_Cache/
 *.tar.gz
 *.zip
@@ -39,11 +40,14 @@ notebooks/sample_window.png
 *.tmp
 *.log
 
-checkpoints/*.pt
-checkpoints/*.pth
-checkpoints/*.onnx
+checkpoints/*
 !checkpoints/.gitkeep
+!checkpoints/stage_b_30epochs/
 !data/processed/.gitkeep
+
+# Evaluation outputs and hydra logs
+outputs/
+results/
 
 # Local incident logs & runs
 wandb/

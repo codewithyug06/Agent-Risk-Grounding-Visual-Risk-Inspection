@@ -4,10 +4,12 @@ Exports the trained model to ONNX format with INT8 quantization for deployment.
 """
 
 import argparse
+import json
 import logging
 import os
+import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -15,13 +17,42 @@ import torch.nn as nn
 from omegaconf import DictConfig, OmegaConf
 import hydra
 
-from ..models.sentinel_model import SentinelModel, create_sentinel_model
-from ..models.frame_encoder import FrameEncoder
-from ..models.temporal_fusion import TemporalFusion
-from ..models.risk_head import RiskHead
-from ..models.localization_head import LocalizationHead
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from src.models.sentinel_model import SentinelModel, create_sentinel_model
+from src.models.frame_encoder import FrameEncoder
+from src.models.temporal_fusion import TemporalFusion
+from src.models.risk_head import RiskHead
+from src.models.localization_head import LocalizationHead
+from src.utils.checkpoint import load_checkpoint
 
 logger = logging.getLogger(__name__)
+
+
+class _ONNXExportWrapper(nn.Module):
+    """
+    SentinelModel.forward() returns an 11-key dict, including non-tensor
+    entries (category: List[str], heatmap: None) that torch.onnx.export
+    cannot trace as outputs. Exporting the raw model against 5 output_names
+    silently misaligns every output after the first non-tensor dict entry
+    (category_probs/bbox/objectness come back with the wrong shape). This
+    wrapper selects exactly the 5 real tensor outputs, in the declared order,
+    so the exported graph's outputs actually match output_names.
+    """
+
+    def __init__(self, model: SentinelModel):
+        super().__init__()
+        self.model = model
+
+    def forward(self, frames: torch.Tensor):
+        out = self.model(frames)
+        return (
+            out["risk_score"],
+            out["category_probs"],
+            out["category_idx"],
+            out["bbox"],
+            out["objectness"],
+        )
 
 
 def export_to_onnx(
@@ -44,6 +75,8 @@ def export_to_onnx(
         verbose: Print export details
     """
     model.eval()
+    export_model = _ONNXExportWrapper(model)
+    export_model.eval()
 
     # Create dummy input
     dummy_input = torch.randn(*input_shape)
@@ -66,7 +99,7 @@ def export_to_onnx(
 
     with torch.no_grad():
         torch.onnx.export(
-            model,
+            export_model,
             dummy_input,
             output_path,
             export_params=True,
@@ -279,7 +312,6 @@ def benchmark_onnx_model(
 
 
 def export_pipeline(
-    config: DictConfig,
     checkpoint_path: str,
     output_dir: str = "onnx_models",
     quantize: bool = True,
@@ -288,9 +320,9 @@ def export_pipeline(
 ) -> Dict[str, Any]:
     """
     Full export pipeline: load model -> export -> verify -> quantize -> benchmark.
+    The model architecture is read from the checkpoint's own saved config.
 
     Args:
-        config: Model configuration
         checkpoint_path: Path to PyTorch checkpoint
         output_dir: Output directory for ONNX models
         quantize: Whether to apply INT8 quantization
@@ -303,11 +335,12 @@ def export_pipeline(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load model
+    # Load model. Prefer the config embedded in the checkpoint itself (the
+    # architecture it was actually trained with) over the caller-supplied
+    # config, since the two can diverge (e.g. risk_head hidden_dim) and a
+    # mismatch produces a cryptic state_dict size-mismatch error.
     logger.info(f"Loading model from: {checkpoint_path}")
-    model = create_sentinel_model(config)
-    checkpoint = torch.load(checkpoint_path, map_location="cpu")
-    model.load_state_dict(checkpoint["model_state_dict"])
+    model = SentinelModel.from_pretrained(checkpoint_path)
     model.eval()
 
     # Export FP32
@@ -329,17 +362,19 @@ def export_pipeline(
     # Benchmark FP32
     if benchmark:
         results["fp32_benchmark"] = benchmark_onnx_model(str(fp32_path))
-        logger.info(f"FP32 Latency: {results['fp32_benchmark']['mean_ms']:.2f}ms ({results['fp32_benchmark']['fps']:.1f} FPS)")
+        b = results["fp32_benchmark"]
+        logger.info(
+            f"FP32 Latency (6-frame window, CPU): mean={b['mean_ms']:.2f}ms "
+            f"p50={b['p50_ms']:.2f}ms p95={b['p95_ms']:.2f}ms ({b['fps']:.1f} FPS)"
+        )
 
     # Quantize
     if quantize:
         int8_path = output_dir / "sentinel_vision_int8.onnx"
 
-        # Generate calibration data
+        # Generate calibration data using the loaded model's own input shape
         calibration_data = [
-            np.random.randn(1, config.frame_window.k, 3,
-                          config.frame_window.resolution[0],
-                          config.frame_window.resolution[1]).astype(np.float32)
+            np.random.randn(1, model.k, 3, model.image_size, model.image_size).astype(np.float32)
             for _ in range(200)
         ]
 
@@ -353,18 +388,38 @@ def export_pipeline(
         # Benchmark INT8
         if benchmark:
             results["int8_benchmark"] = benchmark_onnx_model(str(int8_path))
-            logger.info(f"INT8 Latency: {results['int8_benchmark']['mean_ms']:.2f}ms ({results['int8_benchmark']['fps']:.1f} FPS)")
+            ib = results["int8_benchmark"]
+            logger.info(
+                f"INT8 Latency (6-frame window, CPU): mean={ib['mean_ms']:.2f}ms "
+                f"p50={ib['p50_ms']:.2f}ms p95={ib['p95_ms']:.2f}ms ({ib['fps']:.1f} FPS)"
+            )
+            if ib["p95_ms"] < 500:
+                logger.info(f"PASS: p95={ib['p95_ms']:.2f}ms is under the 500ms target.")
+            else:
+                logger.warning(f"MISS: p95={ib['p95_ms']:.2f}ms exceeds the 500ms target. Reporting the real number, not a target.")
 
             # Speedup
             if results["fp32_benchmark"]:
                 speedup = results["fp32_benchmark"]["mean_ms"] / results["int8_benchmark"]["mean_ms"]
                 logger.info(f"Quantization speedup: {speedup:.2f}x")
 
+    if benchmark:
+        latency_report_path = Path("paper/latency_benchmark.json")
+        latency_report_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(latency_report_path, "w") as f:
+            json.dump({
+                "input_shape": [1, model.k, 3, model.image_size, model.image_size],
+                "device": "cpu",
+                "checkpoint": str(checkpoint_path),
+                "fp32_benchmark": results.get("fp32_benchmark"),
+                "int8_benchmark": results.get("int8_benchmark"),
+            }, f, indent=2)
+        logger.info(f"Latency report written to {latency_report_path}")
+
     return results
 
 
 def export_individual_components(
-    config: DictConfig,
     checkpoint_path: str,
     output_dir: str = "onnx_models/components",
 ):
@@ -374,13 +429,11 @@ def export_individual_components(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    model = create_sentinel_model(config)
-    checkpoint = torch.load(checkpoint_path, map_location="cpu")
-    model.load_state_dict(checkpoint["model_state_dict"])
+    model = SentinelModel.from_pretrained(checkpoint_path)
 
     # 1. Frame Encoder
     frame_encoder = model.frame_encoder
-    dummy_frames = torch.randn(1, 6, 3, 224, 224)
+    dummy_frames = torch.randn(1, model.k, 3, model.image_size, model.image_size)
     torch.onnx.export(
         frame_encoder,
         dummy_frames,
@@ -435,21 +488,24 @@ def export_individual_components(
     logger.info("Exported localization_head.onnx")
 
 
-@hydra.main(version_base=None, config_path="../../configs", config_name="model_small")
-def main(config: DictConfig):
+def main():
     parser = argparse.ArgumentParser(description="Export SENTINEL-Vision to ONNX")
     parser.add_argument("--checkpoint", type=str, default="checkpoints/stage_c/best.pt")
     parser.add_argument("--output-dir", type=str, default="onnx_models")
+    parser.add_argument("--config", type=str, default="model_small")
     parser.add_argument("--no-quantize", action="store_true")
     parser.add_argument("--no-verify", action="store_true")
     parser.add_argument("--no-benchmark", action="store_true")
     parser.add_argument("--components", action="store_true")
     args = parser.parse_args()
 
+    from src.utils.config import load_config
+    from src.utils.logging import setup_logging
+
+    config = load_config(args.config)
     setup_logging(config.get("log_level", "INFO"))
 
     results = export_pipeline(
-        config=config,
         checkpoint_path=args.checkpoint,
         output_dir=args.output_dir,
         quantize=not args.no_quantize,
@@ -458,7 +514,7 @@ def main(config: DictConfig):
     )
 
     if args.components:
-        export_individual_components(config, args.checkpoint)
+        export_individual_components(args.checkpoint, args.output_dir)
 
     logger.info("Export completed!")
     logger.info(f"Results: {results}")

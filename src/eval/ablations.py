@@ -26,6 +26,7 @@ from ..data.augmentation import create_val_transform
 from ..data.frame_windowing import collate_frame_windows
 from .metrics import compute_safety_metrics, compute_localization_iou, compute_latency
 from ..gate.decision_gate import DecisionGate
+from ..utils.checkpoint import load_checkpoint
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,15 @@ class AblationRunner:
         k_values = [1, 2, 4, 6, 8]
         results = {}
 
+        # Load model once
+        model = create_sentinel_model(self.config)
+        checkpoint = load_checkpoint(
+            self.config.get("checkpoint", "checkpoints/stage_c/best.pt"),
+            map_location=self.device
+        )
+        model.load_state_dict(checkpoint["model_state_dict"])
+        model = model.to(self.device).eval()
+
         for k in k_values:
             logger.info(f"  Testing k={k}")
 
@@ -86,24 +96,20 @@ class AblationRunner:
                 val_dataset,
                 batch_size=self.config.training.get("batch_size", 16),
                 shuffle=False,
-                num_workers=self.config.training.get("num_workers", 4),
+                num_workers=self.config.training.get("num_workers", 0),
                 pin_memory=True,
                 collate_fn=collate_frame_windows,
             )
 
-            # Load model (retrained for each k or adapt)
-            # For simplicity, evaluate with model trained on k=6 but using k frames
-            model = create_sentinel_model(self.config)
-            checkpoint = torch.load(
-                self.config.get("checkpoint", "checkpoints/stage_c/best.pt"),
-                map_location=self.device
-            )
-            model.load_state_dict(checkpoint["model_state_dict"])
-            model = model.to(self.device).eval()
-
             # Evaluate
             all_scores, all_labels = self._evaluate_loader(model, val_loader)
             safety = compute_safety_metrics(all_scores, all_labels)
+
+            # Measure latency for window size k
+            sample_k = torch.randn(1, k, 3,
+                                   self.config.frame_window.resolution[0],
+                                   self.config.frame_window.resolution[1])
+            lat = compute_latency(model, sample_k, n_runs=30, device=self.device)
 
             results[f"k_{k}"] = {
                 "k": k,
@@ -112,6 +118,7 @@ class AblationRunner:
                 "f1": safety["f1"],
                 "fnr": safety["false_negative_rate"],
                 "fpr": safety["false_positive_rate"],
+                "latency_ms": lat["mean_ms"],
             }
 
         return results
@@ -123,7 +130,7 @@ class AblationRunner:
 
         # Load model
         model = create_sentinel_model(self.config)
-        checkpoint = torch.load(
+        checkpoint = load_checkpoint(
             self.config.get("checkpoint", "checkpoints/stage_c/best.pt"),
             map_location=self.device
         )
@@ -144,7 +151,7 @@ class AblationRunner:
             val_dataset,
             batch_size=self.config.training.get("batch_size", 16),
             shuffle=False,
-            num_workers=self.config.training.get("num_workers", 4),
+            num_workers=self.config.training.get("num_workers", 0),
             pin_memory=True,
             collate_fn=collate_frame_windows,
         )
@@ -152,20 +159,30 @@ class AblationRunner:
         # Evaluate with different thresholds
         thresholds = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
         threshold_results = {}
+        gate_results = {}
 
+        all_scores, all_labels = self._evaluate_loader(model, val_loader)
         for thresh in thresholds:
-            all_scores, all_labels = self._evaluate_loader(model, val_loader)
             preds = (all_scores > thresh).astype(int)
             safety = compute_safety_metrics(preds, all_labels)
             threshold_results[f"thresh_{thresh}"] = safety
 
         # Evaluate with PPO gate if available
-        gate_results = {}
-        gate_path = self.config.get("gate_checkpoint", "checkpoints/gate/latest.pt")
-        if Path(gate_path).exists():
-            logger.info("  Evaluating with PPO gate")
+        gate_paths = [
+            self.config.get("gate_checkpoint", "checkpoints/gate_rl.pt"),
+            "checkpoints/gate_rl/latest.pt",
+            "checkpoints/gate/latest.pt",
+        ]
+        gate_path = None
+        for gp in gate_paths:
+            if gp and Path(gp).exists():
+                gate_path = gp
+                break
+
+        if gate_path:
+            logger.info(f"  Evaluating with PPO gate from {gate_path}")
             gate = DecisionGate()
-            gate_checkpoint = torch.load(gate_path, map_location=self.device)
+            gate_checkpoint = load_checkpoint(gate_path, map_location=self.device)
             gate.load_state_dict(gate_checkpoint["model_state_dict"])
             gate = gate.to(self.device).eval()
 
@@ -227,8 +244,17 @@ class AblationRunner:
 
             # Check if checkpoint exists for this backbone
             ckpt_path = Path(f"checkpoints/{backbone_name}/best.pt")
+            if not ckpt_path.exists() and backbone_name == "vit_small_patch16_224":
+                ckpt_path = Path("checkpoints/stage_c/best.pt")
+
+            sample = torch.randn(1, self.config.frame_window.k, 3,
+                               self.config.frame_window.resolution[0],
+                               self.config.frame_window.resolution[1])
+            latency = compute_latency(model, sample, n_runs=30, device=self.device)
+            param_count = sum(p.numel() for p in model.parameters())
+
             if ckpt_path.exists():
-                checkpoint = torch.load(ckpt_path, map_location=self.device)
+                checkpoint = load_checkpoint(ckpt_path, map_location=self.device)
                 model.load_state_dict(checkpoint["model_state_dict"])
                 model.eval()
 
@@ -246,19 +272,13 @@ class AblationRunner:
                     val_dataset,
                     batch_size=self.config.training.get("batch_size", 16),
                     shuffle=False,
-                    num_workers=self.config.training.get("num_workers", 4),
+                    num_workers=self.config.training.get("num_workers", 0),
                     pin_memory=True,
                     collate_fn=collate_frame_windows,
                 )
 
                 all_scores, all_labels = self._evaluate_loader(model, val_loader)
                 safety = compute_safety_metrics(all_scores, all_labels)
-
-                # Latency
-                sample = torch.randn(1, self.config.frame_window.k, 3,
-                                   self.config.frame_window.resolution[0],
-                                   self.config.frame_window.resolution[1])
-                latency = compute_latency(model, sample, n_runs=50, device=self.device)
 
                 results[display_name] = {
                     "backbone": backbone_name,
@@ -268,11 +288,16 @@ class AblationRunner:
                     "fnr": safety["false_negative_rate"],
                     "fpr": safety["false_positive_rate"],
                     "latency_ms": latency["mean_ms"],
-                    "params": sum(p.numel() for p in model.parameters()),
+                    "params": param_count,
                 }
             else:
-                logger.warning(f"  No checkpoint found for {display_name}")
-                results[display_name] = {"note": "Checkpoint not found"}
+                logger.warning(f"  No checkpoint found for {display_name} (latency & params measured empirically)")
+                results[display_name] = {
+                    "backbone": backbone_name,
+                    "latency_ms": latency["mean_ms"],
+                    "params": param_count,
+                    "note": "Latency & parameter count measured empirically",
+                }
 
         return results
 

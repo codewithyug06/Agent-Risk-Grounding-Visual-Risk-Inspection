@@ -207,7 +207,10 @@ def visualize_predictions(
 
         draw.rectangle([x1, y1, x2, y2], outline=risk_color[:3], width=3)
         label = f"{category}: {category_conf:.2f}"
-        text_w, text_h = draw.textsize(label, font=font)
+        # ImageDraw.textsize() was removed in Pillow >= 10; textbbox is the
+        # modern replacement and works the same way (returns a bounding box).
+        left, top, right, bottom = draw.textbbox((0, 0), label, font=font)
+        text_w, text_h = right - left, bottom - top
         draw.rectangle([x1, y1 - text_h - 4, x1 + text_w + 4, y1], fill=risk_color[:3])
         draw.text((x1 + 2, y1 - text_h - 2), label, fill=(255, 255, 255), font=font)
 

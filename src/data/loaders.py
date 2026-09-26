@@ -381,6 +381,149 @@ class SentinelDataset(Dataset):
         }
 
 
+class SyntheticInjectionDataset(Dataset):
+    """
+    Loads synthetic injection samples produced by src/data/synthetic_injection.py.
+    Reads frame images + label.json per sample directory. Returns the same schema
+    as SentinelDataset for drop-in compatibility with CombinedSentinelDataset/Trainer.
+    """
+
+    def __init__(
+        self,
+        injection_dir: str,
+        split: str = "train",
+        transform=None,
+        k: int = 6,
+        target_resolution: Tuple[int, int] = (224, 224),
+        categories: Optional[List[str]] = None,
+    ):
+        self.injection_dir = Path(injection_dir)
+        self.split = split
+        self.transform = transform
+        self.k = k
+        self.target_resolution = target_resolution
+        self.categories = set(categories) if categories else None
+
+        split_dir = self.injection_dir / split
+        if not split_dir.exists():
+            raise FileNotFoundError(
+                f"Synthetic injection split not found at {split_dir}. "
+                "Run scripts/generate_synthetic_data.py first."
+            )
+        all_dirs = sorted(p for p in split_dir.iterdir() if p.is_dir())
+        if self.categories is not None:
+            # sample_dir names are "{category}_{idx:05d}" (harmful) or "benign_{idx:05d}"
+            self.sample_dirs = [
+                p for p in all_dirs
+                if any(p.name.startswith(f"{c}_") for c in self.categories)
+            ]
+        else:
+            self.sample_dirs = all_dirs
+
+    def __len__(self) -> int:
+        return len(self.sample_dirs)
+
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        sample_dir = self.sample_dirs[idx]
+        with open(sample_dir / "label.json") as f:
+            label = json.load(f)
+
+        frames_dir = sample_dir / "frames"
+        frame_paths = sorted(
+            frames_dir.glob("frame_*.png"),
+            key=lambda p: int(p.stem.split("_")[1]),
+        )
+        raw_frames = [Image.open(p).convert("RGB") for p in frame_paths[: self.k]]
+        while len(raw_frames) < self.k:
+            raw_frames.append(raw_frames[-1] if raw_frames else Image.new("RGB", self.target_resolution))
+
+        if self.transform:
+            transformed = self.transform(raw_frames)
+            if isinstance(transformed, list):
+                frames_tensor = torch.stack(transformed)
+            elif isinstance(transformed, torch.Tensor) and transformed.dim() == 4:
+                frames_tensor = transformed
+            else:
+                frames_tensor = torch.stack([self.transform(f) for f in raw_frames])
+        else:
+            processed = [
+                torch.from_numpy(np.array(f.resize(self.target_resolution, Image.LANCZOS))).permute(2, 0, 1).float() / 255.0
+                for f in raw_frames
+            ]
+            frames_tensor = torch.stack(processed)
+
+        bbox = label.get("bbox")
+        return {
+            "frames": frames_tensor,
+            "risk_label": torch.tensor(label["risk_label"], dtype=torch.long),
+            "category_label": torch.tensor(label["category_idx"], dtype=torch.long),
+            "bbox": torch.tensor(bbox if bbox else [0.0, 0.0, 0.0, 0.0], dtype=torch.float32),
+            "has_bbox": torch.tensor(1.0 if bbox else 0.0, dtype=torch.float32),
+            "trajectory_id": label.get("source_trajectory_id", sample_dir.name),
+            "trajectory_idx": idx,
+            "action_idx": 0,
+            "action": label.get("action_type", ""),
+            "sample_id": sample_dir.name,
+        }
+
+
+class CombinedSentinelDataset(Dataset):
+    """
+    Merges a real-data SentinelDataset (mostly benign, weak-labeled) with a
+    SyntheticInjectionDataset (balanced, DOM-grounded harmful/benign). This
+    combined dataset is what curriculum training actually trains on.
+    """
+
+    def __init__(
+        self,
+        real_dataset: Optional[Dataset],
+        synthetic_dataset: Optional[Dataset],
+        synthetic_weight: float = 3.0,
+    ):
+        if real_dataset is None and synthetic_dataset is None:
+            raise ValueError("At least one of real_dataset/synthetic_dataset must be provided.")
+        self.real_dataset = real_dataset
+        self.synthetic_dataset = synthetic_dataset
+        self.synthetic_weight = synthetic_weight
+        self._real_len = len(real_dataset) if real_dataset is not None else 0
+        self._synthetic_len = len(synthetic_dataset) if synthetic_dataset is not None else 0
+
+    def __len__(self) -> int:
+        return self._real_len + self._synthetic_len
+
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        if idx < self._real_len:
+            return self.real_dataset[idx]
+        return self.synthetic_dataset[idx - self._real_len]
+
+    def _is_harmful(self, idx: int) -> bool:
+        if idx < self._real_len:
+            item = self.real_dataset[idx]
+        else:
+            item = self.synthetic_dataset[idx - self._real_len]
+        label = item["risk_label"]
+        return bool(label.item() if isinstance(label, torch.Tensor) else label)
+
+    def get_weighted_sampler(self) -> torch.utils.data.WeightedRandomSampler:
+        """
+        Returns a WeightedRandomSampler that upsamples harmful (risk_label=1) and
+        synthetic-sourced samples so each training batch has a meaningful fraction
+        of harmful examples regardless of the raw real:synthetic ratio.
+        """
+        weights = []
+        for i in range(len(self)):
+            is_synthetic = i >= self._real_len
+            is_harmful = self._is_harmful(i)
+            w = 1.0
+            if is_synthetic:
+                w *= self.synthetic_weight
+            if is_harmful:
+                w *= self.synthetic_weight
+            weights.append(w)
+        weights_t = torch.tensor(weights, dtype=torch.double)
+        return torch.utils.data.WeightedRandomSampler(weights_t, num_samples=len(weights_t), replacement=True)
+
+
 def load_real_dataset(
     data_config: Dict[str, Any],
     split: str = "train",

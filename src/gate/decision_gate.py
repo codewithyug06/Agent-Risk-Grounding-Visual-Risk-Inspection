@@ -146,7 +146,8 @@ class DecisionGate(nn.Module):
 
         # Build state vector
         state = self._build_state(risk_score, category, heatmap_conf, action_type)
-        state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
+        device = next(self.parameters()).device if list(self.parameters()) else torch.device("cpu")
+        state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
 
         with torch.no_grad():
             output = self.forward(state_tensor)

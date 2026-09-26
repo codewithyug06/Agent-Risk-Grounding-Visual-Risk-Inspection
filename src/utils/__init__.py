@@ -3,6 +3,7 @@
 from .logging import setup_logging, get_logger
 from .config import load_config, save_config, deep_merge
 from .visualization import visualize_predictions, draw_bboxes, overlay_heatmap
+from .checkpoint import load_checkpoint
 
 __all__ = [
     "setup_logging",
@@ -13,4 +14,5 @@ __all__ = [
     "visualize_predictions",
     "draw_bboxes",
     "overlay_heatmap",
+    "load_checkpoint",
 ]

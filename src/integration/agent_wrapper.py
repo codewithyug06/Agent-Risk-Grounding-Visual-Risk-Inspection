@@ -18,6 +18,7 @@ from ..gate.decision_gate import DecisionGate, create_decision_gate
 from ..data.frame_windowing import extract_frame_window
 from ..data.augmentation import create_val_transform
 from ..utils.logging import setup_logging
+from ..utils.checkpoint import load_checkpoint
 
 logger = logging.getLogger(__name__)
 
@@ -154,14 +155,17 @@ class SentinelWrapper:
         self.frame_buffer = FrameBuffer(frame_buffer_size, target_resolution)
         self.capture = capture or PlaywrightCapture()
 
-        # Load SENTINEL model
-        self.sentinel = create_sentinel_model(config)
+        # Load SENTINEL model. Prefer the config embedded in the checkpoint
+        # itself over the caller-supplied config when a checkpoint is given —
+        # the two can diverge (e.g. risk_head hidden_dim) and constructing the
+        # model from the wrong config produces a cryptic state_dict
+        # size-mismatch error instead of loading correctly.
         if sentinel_checkpoint and Path(sentinel_checkpoint).exists():
             logger.info(f"Loading SENTINEL model from {sentinel_checkpoint}")
-            checkpoint = torch.load(sentinel_checkpoint, map_location=device)
-            self.sentinel.load_state_dict(checkpoint.get("model_state_dict", checkpoint))
+            self.sentinel = SentinelModel.from_pretrained(sentinel_checkpoint)
         else:
             logger.warning(f"No sentinel checkpoint provided or found at '{sentinel_checkpoint}', using initialized model weights.")
+            self.sentinel = create_sentinel_model(config)
         self.sentinel = self.sentinel.to(device).eval()
 
         # Load gate if provided
@@ -169,7 +173,7 @@ class SentinelWrapper:
         if gate_checkpoint and Path(gate_checkpoint).exists():
             logger.info(f"Loading Decision Gate from {gate_checkpoint}")
             self.gate = create_decision_gate(OmegaConf.to_container(config))
-            gate_ckpt = torch.load(gate_checkpoint, map_location=device)
+            gate_ckpt = load_checkpoint(gate_checkpoint, map_location=device)
             self.gate.load_state_dict(gate_ckpt["model_state_dict"])
             self.gate = self.gate.to(device).eval()
         else:
