@@ -1,7 +1,3 @@
-"""
-Decision Gate for SENTINEL-Vision.
-PPO-trained policy that takes risk signals and outputs ALLOW/PAUSE/HARD_BLOCK.
-"""
 
 import torch
 import torch.nn as nn
@@ -254,21 +250,16 @@ class DecisionGateWithHistory(DecisionGate):
         if history is None:
             history = self.history_buffer.repeat(B, 1, 1)
 
-        # LSTM over history
-        lstm_out, _ = self.lstm(history)  # (B, history_len, hidden_dim)
-        history_feat = lstm_out[:, -1, :]  # (B, hidden_dim)
+        lstm_out, _ = self.lstm(history)
+        history_feat = lstm_out[:, -1, :]  
 
-        # Combine with current state
         combined = torch.cat([state, history_feat], dim=-1)
 
-        # Policy
         action_logits = self.policy_net(combined)
         action_probs = F.softmax(action_logits, dim=-1)
 
-        # Value
         value = self.value_net(state)
 
-        # Sample
         dist = torch.distributions.Categorical(action_probs)
         action = dist.sample()
 
@@ -286,7 +277,6 @@ class DecisionGateWithHistory(DecisionGate):
         action_onehot = torch.zeros(self.num_actions)
         action_onehot[action_idx] = 1.0
 
-        # Shift and append
         self.history_buffer = torch.roll(self.history_buffer, shifts=-1, dims=1)
         self.history_buffer[0, -1, :] = action_onehot
 
