@@ -35,6 +35,7 @@ dependencies = [
     "wandb>=0.15.0",
     "onnx>=1.14.0",
     "onnxruntime>=1.15.0",
+    "onnxscript>=0.1.0",
     "opencv-python-headless>=4.8.0",
     "Pillow>=10.0.0",
     "numpy>=1.24.0",
