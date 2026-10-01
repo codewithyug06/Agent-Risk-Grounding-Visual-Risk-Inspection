@@ -1,16 +1,15 @@
 """
-CLI Entrypoint for SENTINEL-Vision.
+CLI Entrypoint for OpticWall.
+The Personal Visual Security Firewall for Autonomous AI Agents.
 
 Usage:
-    sentinel-vision watch --checkpoint <path> [--threshold 0.6]
-    sentinel-vision serve --checkpoint <path> [--port 8000]
-    sentinel-vision benchmark --checkpoint <path> --test-dir <dir>
-    sentinel-vision inject --output-dir <dir> [--n-per-category 600]
-    sentinel-vision export --checkpoint <path> --output <path.onnx>
-    sentinel-vision info --checkpoint <path>
-
-    sentinel-wall demo        # Simulated interception demo (no real checkpoint needed)
-    sentinel-wall dashboard   # Open the incident audit dashboard
+    opticwall watch --checkpoint <path> [--threshold 0.6]
+    opticwall serve --checkpoint <path> [--port 8000]
+    opticwall detect          # Scan and discover active AI agents (Claude, Antigravity, etc.)
+    opticwall mcp             # Run universal MCP server for Claude Code & Antigravity
+    opticwall web             # Serve global landing page & visual risk sandbox
+    opticwall demo            # Simulated interception demo (no checkpoint needed)
+    opticwall dashboard       # Open incident audit dashboard
 """
 
 import argparse
@@ -22,23 +21,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from PIL import Image
 
-from .desktop_wall import SentinelSecurityWall
+from .desktop_wall import OpticWall, SentinelSecurityWall
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger("sentinel-vision")
+logger = logging.getLogger("opticwall")
 
 
 # ---------------------------------------------------------------------------
-# demo / dashboard (legacy sentinel-wall commands, unchanged behavior)
+# demo / dashboard
 # ---------------------------------------------------------------------------
 
 def run_demo():
-    """Simulates an AI agent attempting a destructive financial operation and verifies the wall intercepts it."""
+    """Simulates an AI agent attempting a destructive financial operation and verifies OpticWall intercepts it."""
     print("=================================================================")
-    print("[*] SENTINEL-Vision: Desktop Visual Security Firewall Simulation")
+    print("[*] OpticWall: Desktop Visual Security Firewall Simulation")
     print("=================================================================")
-    print("[1] Initializing Security Wall on local CPU...")
-    wall = SentinelSecurityWall(device="cpu")
+    print("[1] Initializing OpticWall on local CPU...")
+    wall = OpticWall(device="cpu")
 
     print("[2] Simulating AI Agent browsing to account settings...")
     for i in range(5):
@@ -262,7 +261,7 @@ def run_web(port: int = 3000):
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="SENTINEL-Vision CLI")
+    parser = argparse.ArgumentParser(description="OpticWall: Visual Security Firewall for Autonomous AI Agents")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_watch = sub.add_parser("watch", help="Run the real continuous screen-monitoring loop")

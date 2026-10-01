@@ -24,7 +24,10 @@ class IncidentReporter:
 
     def __init__(self, output_dir: Optional[str] = None):
         if output_dir is None:
-            self.output_dir = Path.home() / ".sentinel_vision" / "incidents"
+            self.output_dir = Path.home() / ".opticwall" / "incidents"
+            legacy_dir = Path.home() / ".sentinel_vision" / "incidents"
+            if not self.output_dir.exists() and legacy_dir.exists():
+                self.output_dir = legacy_dir
         else:
             self.output_dir = Path(output_dir)
 

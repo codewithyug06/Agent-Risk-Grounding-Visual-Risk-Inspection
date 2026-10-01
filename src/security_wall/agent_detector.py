@@ -181,20 +181,23 @@ class AgentDetector:
             "has_high_privilege_agent": any(a.risk_level == "high_privilege" for a in agents),
             "timestamp": datetime.now().isoformat(),
             "recommendation": (
-                "SENTINEL-Vision protection recommended: Active autonomous agents detected with OS-level execution capability."
+                "OpticWall protection recommended: Active autonomous agents detected with OS-level execution capability."
                 if len(agents) > 0
                 else "No active computer-use agents currently detected."
             ),
         }
 
+    # Alias for convenience
+    detect_active_agents = scan_active_agents
+
 
 def print_agent_report():
-    """Terminal output utility for `sentinel-wall detect`."""
+    """Terminal output utility for `opticwall detect`."""
     detector = AgentDetector()
     agents = detector.scan_active_agents()
 
     print("==================================================================")
-    print("[*] SENTINEL-Vision: Autonomous AI Agent Auto-Discovery")
+    print("[*] OpticWall: Autonomous AI Agent Auto-Discovery")
     print("==================================================================")
 
     if not agents:
@@ -211,8 +214,8 @@ def print_agent_report():
             print(f"      Oversight:  [ATTACHED - SCREEN PIXEL MONITORING ARMED]\n")
 
     print("==================================================================")
-    print("Run `sentinel-wall watch` to start the visual circuit breaker.")
-    print("Run `sentinel-wall mcp` to start the universal MCP server for Claude & Antigravity.")
+    print("Run `opticwall watch` to start the visual circuit breaker.")
+    print("Run `opticwall mcp` to start the universal MCP server for Claude & Antigravity.")
     print("==================================================================")
 
 

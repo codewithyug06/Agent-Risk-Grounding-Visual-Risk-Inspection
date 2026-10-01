@@ -1,12 +1,12 @@
 """
-Model Context Protocol (MCP) Server for SENTINEL-Vision.
+Model Context Protocol (MCP) Server for OpticWall.
 Enables Claude Code, Claude Desktop, Antigravity, and Cursor to attach to
-SENTINEL-Vision as a native oversight plugin via the standard JSON-RPC stdio protocol.
+OpticWall as a native oversight plugin via the standard JSON-RPC stdio protocol.
 
 Usage:
     python -m src.security_wall.mcp_server
 Or via Claude Code CLI:
-    claude mcp add sentinel-vision -- python -m src.security_wall.mcp_server
+    claude mcp add opticwall -- python -m src.security_wall.mcp_server
 """
 
 import sys
@@ -28,40 +28,40 @@ if hasattr(sys.stdout, "reconfigure"):
 # MCP servers must write logs to stderr, NOT stdout (stdout is reserved for JSON-RPC)
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] [SENTINEL-MCP] %(message)s",
+    format="%(asctime)s [%(levelname)s] [OPTICWALL-MCP] %(message)s",
     stream=sys.stderr,
 )
-logger = logging.getLogger("sentinel-mcp")
+logger = logging.getLogger("opticwall-mcp")
 
 from .agent_detector import AgentDetector
-from .desktop_wall import SentinelSecurityWall
+from .desktop_wall import OpticWall, SentinelSecurityWall
 
 
-class SentinelMCPServer:
+class OpticWallMCPServer:
     """
-    Standard MCP Stdio Server exposing SENTINEL-Vision oversight tools
+    Standard MCP Stdio Server exposing OpticWall oversight tools
     to Claude Code, Antigravity, and other MCP-compliant agents.
     """
 
     def __init__(self):
-        self.wall: Optional[SentinelSecurityWall] = None
+        self.wall: Optional[OpticWall] = None
         self.detector = AgentDetector()
         self._init_security_wall()
 
     def _init_security_wall(self):
         try:
-            logger.info("Initializing SentinelSecurityWall backend...")
-            self.wall = SentinelSecurityWall(device="cpu")
-            logger.info("SentinelSecurityWall armed and ready.")
+            logger.info("Initializing OpticWall backend...")
+            self.wall = OpticWall(device="cpu")
+            logger.info("OpticWall armed and ready.")
         except Exception as e:
-            logger.error(f"Failed to initialize SentinelSecurityWall: {e}")
+            logger.error(f"Failed to initialize OpticWall: {e}")
             self.wall = None
 
     def get_tool_definitions(self) -> List[Dict[str, Any]]:
         """Defines the tools available to connected AI agents."""
         return [
             {
-                "name": "sentinel_inspect_action",
+                "name": "opticwall_inspect_action",
                 "description": (
                     "CRITICAL SAFETY GATE: Inspect an intended computer-use action (click, form submit, "
                     "bash command, file deletion, financial payment) against the current screen pixels "
@@ -92,11 +92,10 @@ class SentinelMCPServer:
                 },
             },
             {
-                "name": "sentinel_screen_check",
+                "name": "opticwall_screen_check",
                 "description": (
-                    "Capture the current desktop display and run SENTINEL-Vision perception model "
-                    "to assess the visual risk state (detects sensitive login forms, account settings, "
-                    "financial transactions, or destructive dialogs)."
+                    "Capture the current desktop display and run OpticWall perception model "
+                    "to assess visual risk state (sensitive logins, financial checkouts, or destructive dialogs)."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -109,7 +108,7 @@ class SentinelMCPServer:
                 },
             },
             {
-                "name": "sentinel_agent_status",
+                "name": "opticwall_agent_status",
                 "description": "Scan and report all active autonomous AI agents detected on this operating system.",
                 "inputSchema": {
                     "type": "object",
@@ -120,7 +119,7 @@ class SentinelMCPServer:
 
     def handle_tool_call(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Executes tool requests dispatched from the AI agent."""
-        if tool_name == "sentinel_inspect_action":
+        if tool_name in ["opticwall_inspect_action", "sentinel_inspect_action"]:
             action_type = arguments.get("action_type", "click")
             target = arguments.get("target_element", "unknown")
             agent_id = arguments.get("agent_identity", "Connected MCP Agent")
@@ -175,7 +174,7 @@ class SentinelMCPServer:
 
             return res
 
-        elif tool_name == "sentinel_screen_check":
+        elif tool_name in ["opticwall_screen_check", "sentinel_screen_check"]:
             summary = self.detector.get_summary()
             return {
                 "status": "active",
@@ -184,7 +183,7 @@ class SentinelMCPServer:
                 "recommendation": summary["recommendation"],
             }
 
-        elif tool_name == "sentinel_agent_status":
+        elif tool_name in ["opticwall_agent_status", "sentinel_agent_status"]:
             return self.detector.get_summary()
 
         else:
@@ -192,7 +191,7 @@ class SentinelMCPServer:
 
     def run(self):
         """Standard JSON-RPC 2.0 stdio loop for MCP protocol."""
-        logger.info("SENTINEL-Vision MCP Server running on stdio...")
+        logger.info("OpticWall MCP Server running on stdio...")
         for line in sys.stdin:
             line = line.strip()
             if not line:
@@ -219,7 +218,7 @@ class SentinelMCPServer:
                             "tools": {},
                         },
                         "serverInfo": {
-                            "name": "sentinel-vision-mcp",
+                            "name": "opticwall-mcp",
                             "version": "1.0.0",
                         },
                     },
@@ -279,8 +278,12 @@ class SentinelMCPServer:
 
 
 def main():
-    server = SentinelMCPServer()
+    server = OpticWallMCPServer()
     server.run()
+
+
+# Backwards compatibility alias
+SentinelMCPServer = OpticWallMCPServer
 
 
 if __name__ == "__main__":

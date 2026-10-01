@@ -1,6 +1,6 @@
 <div align="center">
-  <h1>Agent Risk Grounding & Visual Risk Inspection (ARG-VRI)</h1>
-  <h3><b>SENTINEL-Vision: Real-Time Visual Safety Monitoring for Computer-Use AI Agents via Temporal Risk Detection and UI Element Grounding</b></h3>
+  <h1>OpticWall: Visual Security Firewall for Autonomous AI Agents</h1>
+  <h3><b>ARG-VRI / OpticWall: Real-Time Visual Safety Monitoring for Computer-Use AI Agents via Temporal Risk Detection and UI Element Grounding</b></h3>
 
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
   [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
@@ -9,7 +9,7 @@
   [![Coverage](https://img.shields.io/badge/Coverage-47%25-green.svg)]()
   [![Latency](https://img.shields.io/badge/Inference-207.5ms%20p95%20(FP32%20CPU%2C%20k%3D6)-purple.svg)]()
 
-  <p><i>A production-grade, model-agnostic computer vision system that monitors autonomous AI agents by observing <b>strictly screen pixels</b>—an external, tamper-proof oversight channel that grounds and inspects visual risk before action execution.</i></p>
+  <p><i>A production-grade, model-agnostic computer vision firewall that monitors autonomous AI agents by observing <b>strictly screen pixels</b>—an external, tamper-proof oversight channel that grounds and inspects visual risk before action execution.</i></p>
 
 
 </div>
@@ -66,7 +66,7 @@ TRADITIONAL COLLUSIVE MONITORING (INSECURE)
 
 ========================================================================
 
-ARG-VRI / SENTINEL-VISION VISUAL FIREWALL (SECURE & NON-COLLUSIVE)
+ARG-VRI / OPTICWALL VISUAL FIREWALL (SECURE & NON-COLLUSIVE)
 
   AI Agent LLM (Any Model: Claude, GPT-4o, DeepSeek)    
   Generates action: CLICK(x=840, y=520)                 
@@ -74,7 +74,7 @@ ARG-VRI / SENTINEL-VISION VISUAL FIREWALL (SECURE & NON-COLLUSIVE)
                             Intercepted before execution
                            
 
-   SENTINEL-Vision (Pixels-Only Visual Oversight)     
+   OpticWall (Pixels-Only Visual Oversight)     
   - Captures actual screen pixel buffer (k=6 frames)    
   - Detects destructive button: "DROP DATABASE"         
   - Computes Visual Risk: 0.93 (Destructive) [illustrative]           
@@ -86,7 +86,7 @@ ARG-VRI / SENTINEL-VISION VISUAL FIREWALL (SECURE & NON-COLLUSIVE)
 ```
 
 1. **Collusive Channel Vulnerability**: Traditional guardrails inspect the agent's internal chain-of-thought, tool calls, or reasoning logs. If an agent is jailbroken, prompt-injected, or misaligned, it can hallucinate benign justifications while executing catastrophic actions.
-2. **Zero-Trust Visual Oversight**: SENTINEL-Vision operates on an independent, physical information plane—**screen pixels only**. The agent cannot forge the visual rendered state of the display.
+2. **Zero-Trust Visual Oversight**: OpticWall operates on an independent, physical information plane—**screen pixels only**. The agent cannot forge the visual rendered state of the display.
 3. **Pre-Action Grounding**: Evaluates the sliding spatiotemporal window of frames *before* the operating system or browser executes the click or keystroke.
 
 ---
@@ -95,7 +95,7 @@ ARG-VRI / SENTINEL-VISION VISUAL FIREWALL (SECURE & NON-COLLUSIVE)
 
 | Stakeholder / Persona | Operational Benefit |
 | :--- | :--- |
-| **End-Users & Developers** | A lightweight, background **Desktop Visual Firewall** (`sentinel-wall`) protecting local files, wallets, passwords, and sessions while running autonomous agents like Claude Computer Use or Antigravity browser preview. |
+| **End-Users & Developers** | A lightweight, background **Desktop Visual Firewall** (`opticwall`) protecting local files, wallets, passwords, and sessions while running autonomous agents like Claude Computer Use or Antigravity browser preview. |
 | **Enterprise IT & Security Teams (SOC / CISO)** | Non-collusive, tamper-proof visual audit logging ensuring agent compliance with SOC 2, HIPAA, and GDPR across automated workflows. |
 | **AI Labs (Anthropic, OpenAI, Google DeepMind)** | A drop-in, model-agnostic safety layer for computer-use agents that operates independently of the LLM's architecture or prompt structure. |
 | **RPA & Automation Platforms** | Circuit breaker preventing destructive database deletions, unauthorized payments, or PII leaks in enterprise automation pipelines. |
@@ -206,13 +206,13 @@ $$R(a, y) = \begin{cases} +1.0 & \text{if } y = \text{Harmful and } a = \text{HA
 
 ## Turnkey Desktop Security Wall & Public Deployment
 
-Any user can immediately install SENTINEL-Vision on their computer as a background security firewall.
+Any user can immediately install OpticWall on their computer as a background security firewall.
 
 ### 1. Installation
 ```bash
 # Clone repository
 git clone https://github.com/codewithyug06/Agent-Risk-Grounding-Visual-Risk-Inspection.git
-cd sentinel-vision
+cd opticwall
 
 # Install package and CLI
 pip install -e .
@@ -220,22 +220,28 @@ pip install -e .
 
 ### 2. Run Simulated Malpractice Interception
 ```bash
-sentinel-wall demo
+opticwall demo
 ```
 *Simulates an autonomous agent attempting to initiate an unauthorized financial transaction and verifies instant interception.*
 
-### 3. Open Visual Malpractice Audit Dashboard
+### 3. Launch Web Platform & Real-Time Agent Discovery
 ```bash
-sentinel-wall dashboard
+opticwall web --port 3000
 ```
-*Opens `~/.sentinel_vision/incidents/security_dashboard.html` showing full visual evidence screenshots and threat diagnostics.*
+*Launches the modern OpticWall web platform at `http://localhost:3000` with 1-click installers, live background agent scanning, and interactive visual sandbox testing.*
 
-### 4. 3-Line Python SDK Integration
+### 4. Open Visual Malpractice Audit Dashboard
+```bash
+opticwall dashboard
+```
+*Opens `~/.opticwall/incidents/security_dashboard.html` showing full visual evidence screenshots and threat diagnostics.*
+
+### 5. 3-Line Python SDK Integration
 ```python
-from src.security_wall import SentinelSecurityWall
+from src.security_wall import OpticWall
 
 # Initialize security wall on local CPU or GPU
-wall = SentinelSecurityWall(device="cpu")
+wall = OpticWall(device="cpu")
 
 # Inspect action before it executes
 should_proceed, decision, incident = wall.monitor_action(
@@ -246,7 +252,7 @@ should_proceed, decision, incident = wall.monitor_action(
 )
 
 if not should_proceed:
-    print(f" BLOCKED by Sentinel Security Wall! Risk: {decision.category} ({decision.risk_score:.2%})")
+    print(f" BLOCKED by OpticWall! Risk: {decision.category} ({decision.risk_score:.2%})")
 ```
 
 ### 5. FastAPI Gateway
@@ -313,7 +319,7 @@ machine (no CUDA device benchmarked here) and is not reported until it is.
 ## File Skeleton & Codebase Navigation
 
 ```text
-sentinel-vision/
+opticwall/
 |-- configs/                            # Hydra configuration files
 |   |-- config.yaml                     # Default hyperparameter hierarchy
 |   |-- model/                          # ViT-S, ConvNeXt, DINOv2 configurations
@@ -356,10 +362,15 @@ sentinel-vision/
 |   |   |-- live_monitor.py             # Screen capture & live visual overlay
 |   |   `-- intercept_api.py            # FastAPI REST gateway (/intercept)
 |   |-- security_wall/                  # Desktop visual firewall & incident logging
-|   |   |-- desktop_wall.py             # SentinelSecurityWall core service
+|   |   |-- desktop_wall.py             # OpticWall core service
 |   |   |-- incident_reporter.py        # Screenshot evidence annotator & HTML dashboard
-|   |   `-- cli.py                      # CLI commands (sentinel-wall demo/dashboard)
+|   |   |-- agent_detector.py           # Real-time background agent discovery engine
+|   |   |-- mcp_server.py               # Model Context Protocol stdio security server
+|   |   |-- web_server.py               # Modern web UI platform & REST APIs
+|   |   `-- cli.py                      # CLI entrypoints (opticwall web/demo/dashboard)
 |   `-- utils/                          # Logging, visualization, configuration helpers
+|-- web/                                # Public web landing page & interactive sandbox
+|   `-- index.html                      # Modern cyber-aesthetic web dashboard UI
 |-- scripts/                            # Operational scripts
 |   |-- download_datasets.py            # Mind2Web, ScreenSpot, AgentTrek downloader
 |   |-- preprocess_real_data.py         # 16,726 trajectory preprocessor

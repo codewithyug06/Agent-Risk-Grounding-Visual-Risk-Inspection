@@ -1,7 +1,7 @@
 [project]
-name = "agent-risk-grounding-visual-risk-inspection"
+name = "opticwall"
 version = "0.1.0"
-description = "Agent Risk Grounding & Visual Risk Inspection: Real-Time Visual Safety Monitoring for Computer-Use AI Agents via Temporal Risk Detection and UI Element Grounding"
+description = "OpticWall: Real-Time Visual Security Firewall for Autonomous AI Agents via Temporal Risk Detection and UI Element Grounding"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
@@ -17,6 +17,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Scientific/Engineering :: Image Recognition",
+    "Topic :: Security",
 ]
 requires-python = ">=3.10"
 dependencies = [
@@ -57,6 +58,8 @@ dev = [
 ]
 
 [project.scripts]
+opticwall = "src.security_wall.cli:main"
+optic-wall = "src.security_wall.cli:main"
 sentinel-wall = "src.security_wall.cli:main"
 sentinel-guard = "src.security_wall.cli:main"
 

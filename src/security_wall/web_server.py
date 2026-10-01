@@ -23,17 +23,17 @@ from pydantic import BaseModel
 from PIL import Image
 import numpy as np
 
-logger = logging.getLogger("sentinel-web")
+logger = logging.getLogger("opticwall-web")
 
 from .agent_detector import AgentDetector
-from .desktop_wall import SentinelSecurityWall
+from .desktop_wall import OpticWall, SentinelSecurityWall
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 WEB_DIR = REPO_ROOT / "web"
 
 app = FastAPI(
-    title="SENTINEL-Vision Web Platform",
-    description="Live Visual Oversight Firewall for Autonomous AI Agents",
+    title="OpticWall Web Platform",
+    description="OpticWall: Live Visual Security Firewall for Autonomous AI Agents",
     version="1.0.0"
 )
 
@@ -46,17 +46,17 @@ app.add_middleware(
 )
 
 # Global Wall Instance
-wall_instance: Optional[SentinelSecurityWall] = None
+wall_instance: Optional[OpticWall] = None
 detector = AgentDetector()
 
 
-def get_wall() -> SentinelSecurityWall:
+def get_wall() -> OpticWall:
     global wall_instance
     if wall_instance is None:
         try:
-            wall_instance = SentinelSecurityWall(device="cpu")
+            wall_instance = OpticWall(device="cpu")
         except Exception as e:
-            logger.error(f"Error initializing SentinelSecurityWall: {e}")
+            logger.error(f"Error initializing OpticWall: {e}")
             raise HTTPException(status_code=500, detail=str(e))
     return wall_instance
 
@@ -66,7 +66,7 @@ async def health_check():
     """Health check endpoint confirming engine is armed."""
     return {
         "status": "online",
-        "engine": "SENTINEL-Vision v1.0.0",
+        "engine": "OpticWall v1.0.0",
         "device": "cpu",
         "timestamp": datetime.now().isoformat(),
     }
@@ -155,7 +155,11 @@ async def api_inspect_image(
 @app.get("/api/incidents")
 async def api_get_incidents():
     """Retrieve history of intercepted incidents from local audit storage."""
-    incidents_dir = Path.home() / ".sentinel_vision" / "incidents"
+    incidents_dir = Path.home() / ".opticwall" / "incidents"
+    if not (incidents_dir / "incident_history.jsonl").exists():
+        legacy_dir = Path.home() / ".sentinel_vision" / "incidents"
+        if (legacy_dir / "incident_history.jsonl").exists():
+            incidents_dir = legacy_dir
     history_file = incidents_dir / "incident_history.jsonl"
     
     if not history_file.exists():
@@ -190,9 +194,9 @@ async def api_download_installer(platform: str):
     if platform in ["windows", "win", "exe"]:
         script_content = (
             "@echo off\r\n"
-            "title SENTINEL-Vision Guard Installer\r\n"
+            "title OpticWall Guard Installer\r\n"
             "echo ==================================================================\r\n"
-            "echo [*] Installing SENTINEL-Vision Desktop Security Guard for Windows\r\n"
+            "echo [*] Installing OpticWall Desktop Security Guard for Windows\r\n"
             "echo ==================================================================\r\n"
             "python --version >nul 2>&1\r\n"
             "if %errorlevel% neq 0 (\r\n"
@@ -200,34 +204,34 @@ async def api_download_installer(platform: str):
             "    pause\r\n"
             "    exit /b 1\r\n"
             ")\r\n"
-            "echo [+] Installing sentinel-vision core package...\r\n"
-            "pip install agent-risk-grounding-visual-risk-inspection psutil pillow mss fastapi uvicorn onnxruntime\r\n"
-            "echo [+] Initializing Sentinel Desktop Guard...\r\n"
-            "start \"SENTINEL-Vision Guard\" python -m src.security_wall.cli watch --checkpoint checkpoints/stage_c/best.pt\r\n"
-            "echo [v] SENTINEL-Vision is now armed and watching agent actions.\r\n"
+            "echo [+] Installing opticwall core package...\r\n"
+            "pip install opticwall psutil pillow mss fastapi uvicorn onnxruntime\r\n"
+            "echo [+] Initializing OpticWall Desktop Guard...\r\n"
+            "start \"OpticWall Guard\" python -m src.security_wall.cli watch --checkpoint checkpoints/stage_c/best.pt\r\n"
+            "echo [v] OpticWall is now armed and watching agent actions.\r\n"
             "pause\r\n"
         )
         return Response(
             content=script_content,
             media_type="application/x-bat",
-            headers={"Content-Disposition": "attachment; filename=sentinel-guard-setup.bat"}
+            headers={"Content-Disposition": "attachment; filename=opticwall-guard-setup.bat"}
         )
 
     elif platform in ["mac", "macos", "darwin"]:
         script_content = (
             "#!/usr/bin/env bash\n"
             "echo '=================================================================='\n"
-            "echo '[*] Installing SENTINEL-Vision Desktop Guard for macOS'\n"
+            "echo '[*] Installing OpticWall Desktop Guard for macOS'\n"
             "echo '=================================================================='\n"
-            "pip install agent-risk-grounding-visual-risk-inspection psutil pillow mss fastapi uvicorn onnxruntime\n"
+            "pip install opticwall psutil pillow mss fastapi uvicorn onnxruntime\n"
             "echo '[+] Registering MCP plugin with Claude Desktop & Claude Code...'\n"
-            "claude mcp add sentinel-vision -- python -m src.security_wall.mcp_server 2>/dev/null || true\n"
-            "echo '[v] SENTINEL-Vision is armed and monitoring.'\n"
+            "claude mcp add opticwall -- python -m src.security_wall.mcp_server 2>/dev/null || true\n"
+            "echo '[v] OpticWall is armed and monitoring.'\n"
         )
         return Response(
             content=script_content,
             media_type="application/x-sh",
-            headers={"Content-Disposition": "attachment; filename=sentinel-guard-setup.sh"}
+            headers={"Content-Disposition": "attachment; filename=opticwall-guard-setup.sh"}
         )
 
     else:  # Linux
@@ -235,15 +239,15 @@ async def api_download_installer(platform: str):
             "#!/usr/bin/env bash\n"
             "set -e\n"
             "echo '=================================================================='\n"
-            "echo '[*] Installing SENTINEL-Vision Daemon for Linux'\n"
+            "echo '[*] Installing OpticWall Daemon for Linux'\n"
             "echo '=================================================================='\n"
-            "pip install agent-risk-grounding-visual-risk-inspection psutil pillow mss fastapi uvicorn onnxruntime\n"
-            "echo '[v] Installation complete. Run `sentinel-wall detect` to scan for agents.'\n"
+            "pip install opticwall psutil pillow mss fastapi uvicorn onnxruntime\n"
+            "echo '[v] Installation complete. Run `opticwall detect` to scan for agents.'\n"
         )
         return Response(
             content=script_content,
             media_type="application/x-sh",
-            headers={"Content-Disposition": "attachment; filename=install-sentinel.sh"}
+            headers={"Content-Disposition": "attachment; filename=install-opticwall.sh"}
         )
 
 
@@ -259,7 +263,7 @@ def run_server(port: int = 3000):
 
     url = f"http://localhost:{port}"
     print("==================================================================")
-    print(f"[*] SENTINEL-Vision: Interactive Platform & API Active")
+    print(f"[*] OpticWall: Interactive Platform & API Active")
     print(f"[+] Website & Playground: {url}")
     print(f"[+] Live Agent API:       {url}/api/detect")
     print(f"[+] Visual Inspect API:   {url}/api/inspect")

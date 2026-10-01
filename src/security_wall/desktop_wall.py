@@ -1,5 +1,5 @@
 """
-Desktop Security Wall Service for SENTINEL-Vision.
+OpticWall: Real-Time Visual Security Firewall for Autonomous AI Agents.
 Continuously watches agent previews / browser windows and blocks harmful malpractice.
 """
 
@@ -20,9 +20,9 @@ from .incident_reporter import IncidentReporter
 logger = logging.getLogger(__name__)
 
 
-class SentinelSecurityWall:
+class OpticWall:
     """
-    Personal Security Firewall for Computer-Use AI Agents.
+    OpticWall: The Personal Visual Security Firewall for Autonomous AI Agents.
     Watches screen pixels, intercepts dangerous clicks/actions, and reports malpractice.
     """
 
@@ -131,3 +131,7 @@ class SentinelSecurityWall:
     def get_audit_dashboard(self) -> str:
         """Returns file path to the generated HTML security audit dashboard."""
         return self.reporter.generate_html_summary()
+
+
+# Backwards compatibility alias
+SentinelSecurityWall = OpticWall
