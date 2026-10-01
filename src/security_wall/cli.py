@@ -252,32 +252,9 @@ def run_mcp():
 
 
 def run_web(port: int = 3000):
-    """Serve the global landing page & interactive demo locally."""
-    import http.server
-    import socketserver
-    import webbrowser
-    import os
-
-    web_dir = Path(__file__).resolve().parent.parent.parent / "web"
-    if not web_dir.exists():
-        raise FileNotFoundError(f"Web directory not found at {web_dir}")
-
-    class QuietHandler(http.server.SimpleHTTPRequestHandler):
-        def log_message(self, format, *args):
-            pass
-
-    os.chdir(str(web_dir))
-    with socketserver.TCPServer(("", port), QuietHandler) as httpd:
-        url = f"http://localhost:{port}"
-        print("==================================================================")
-        print(f"[*] SENTINEL-Vision: Serving Global Landing Page & Web Showcase")
-        print(f"[+] URL: {url}")
-        print("==================================================================")
-        webbrowser.open(url)
-        try:
-            httpd.serve_forever()
-        except KeyboardInterrupt:
-            print("\nShutting down web showcase server.")
+    """Serve the global landing page & interactive API platform locally."""
+    from .web_server import run_server
+    run_server(port=port)
 
 
 # ---------------------------------------------------------------------------
