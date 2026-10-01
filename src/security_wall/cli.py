@@ -239,6 +239,47 @@ def run_info(checkpoint: str):
         print(f"  {key}: {val:,}")
 
 
+def run_detect():
+    """Discover all active autonomous AI agents on the system."""
+    from .agent_detector import print_agent_report
+    print_agent_report()
+
+
+def run_mcp():
+    """Run Model Context Protocol (MCP) server for Claude Code & Antigravity."""
+    from .mcp_server import main as mcp_main
+    mcp_main()
+
+
+def run_web(port: int = 3000):
+    """Serve the global landing page & interactive demo locally."""
+    import http.server
+    import socketserver
+    import webbrowser
+    import os
+
+    web_dir = Path(__file__).resolve().parent.parent.parent / "web"
+    if not web_dir.exists():
+        raise FileNotFoundError(f"Web directory not found at {web_dir}")
+
+    class QuietHandler(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, format, *args):
+            pass
+
+    os.chdir(str(web_dir))
+    with socketserver.TCPServer(("", port), QuietHandler) as httpd:
+        url = f"http://localhost:{port}"
+        print("==================================================================")
+        print(f"[*] SENTINEL-Vision: Serving Global Landing Page & Web Showcase")
+        print(f"[+] URL: {url}")
+        print("==================================================================")
+        webbrowser.open(url)
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            print("\nShutting down web showcase server.")
+
+
 # ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
@@ -275,6 +316,11 @@ def main():
 
     sub.add_parser("demo", help="Run the simulated interception demo (no checkpoint needed)")
     sub.add_parser("dashboard", help="Open the incident audit dashboard")
+    sub.add_parser("detect", help="Scan and detect active autonomous AI agents on the system")
+    sub.add_parser("mcp", help="Run the universal MCP server for Claude Code and Antigravity")
+    
+    p_web = sub.add_parser("web", help="Serve the global landing page & interactive demo")
+    p_web.add_argument("--port", type=int, default=3000)
 
     args = parser.parse_args()
 
@@ -294,6 +340,12 @@ def main():
         run_demo()
     elif args.command == "dashboard":
         run_dashboard()
+    elif args.command == "detect":
+        run_detect()
+    elif args.command == "mcp":
+        run_mcp()
+    elif args.command == "web":
+        run_web(args.port)
 
 
 if __name__ == "__main__":
