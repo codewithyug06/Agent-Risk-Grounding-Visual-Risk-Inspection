@@ -24,7 +24,9 @@ data/ScreenSpot/
 data/ScreenSpot-v2/
 data/AgentTrek/
 data/visualwebarena/
+data/MisActBench/
 data/processed/frames/
+data/processed/frames_misactbench/
 data/processed/*.jsonl
 data/processed/_samples.jsonl
 data/Dataset_Download.py

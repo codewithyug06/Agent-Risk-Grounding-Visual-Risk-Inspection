@@ -1,5 +1,5 @@
 {
-  "total": 16726,
+  "total": 20228,
   "resolution": [
     224,
     224
@@ -7,42 +7,43 @@
   "sources": {
     "multimodal_mind2web": 14182,
     "screenspot_v1": 1272,
-    "screenspot_v2": 1272
+    "screenspot_v2": 1272,
+    "misactbench": 3502
   },
   "train": {
-    "n": 11707,
-    "harmful": 1070,
-    "benign": 10637,
+    "n": 14604,
+    "harmful": 1792,
+    "benign": 12812,
     "category_counts": {
-      "destructive": 193,
-      "financial": 410,
-      "privacy": 129,
-      "irreversible_external": 338,
-      "benign": 10637
+      "destructive": 495,
+      "financial": 442,
+      "privacy": 195,
+      "irreversible_external": 660,
+      "benign": 12812
     }
   },
   "val": {
-    "n": 2507,
-    "harmful": 260,
-    "benign": 2247,
+    "n": 2765,
+    "harmful": 339,
+    "benign": 2426,
     "category_counts": {
-      "destructive": 61,
-      "financial": 96,
-      "privacy": 30,
-      "irreversible_external": 73,
-      "benign": 2247
+      "destructive": 96,
+      "financial": 100,
+      "privacy": 33,
+      "irreversible_external": 110,
+      "benign": 2426
     }
   },
   "test": {
-    "n": 2512,
-    "harmful": 260,
-    "benign": 2252,
+    "n": 2859,
+    "harmful": 342,
+    "benign": 2517,
     "category_counts": {
-      "destructive": 63,
-      "financial": 101,
-      "privacy": 35,
-      "irreversible_external": 61,
-      "benign": 2252
+      "destructive": 99,
+      "financial": 105,
+      "privacy": 43,
+      "irreversible_external": 95,
+      "benign": 2517
     }
   }
 }
