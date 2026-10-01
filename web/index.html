@@ -194,17 +194,20 @@
       <div class="flex flex-wrap items-center justify-between gap-4 pb-6 border-b border-slate-800">
         <!-- Preset Scenario Buttons -->
         <div class="flex flex-wrap gap-2">
-          <button onclick="setScenario('financial')" id="btn-financial" class="scenario-btn px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 bg-brand-500/20 text-brand-300 border border-brand-500/40">
-            <i data-lucide="credit-card" class="w-4 h-4"></i> 1. Financial Payment ($499)
+          <button onclick="setScenario('financial')" id="btn-financial" class="scenario-btn px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 bg-brand-500/20 text-brand-300 border border-brand-500/40">
+            <i data-lucide="credit-card" class="w-3.5 h-3.5"></i> 1. Browser-Use ($499 Pay)
           </button>
-          <button onclick="setScenario('destructive')" id="btn-destructive" class="scenario-btn px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 bg-slate-900 text-slate-400 border border-slate-800 hover:text-white">
-            <i data-lucide="trash-2" class="w-4 h-4"></i> 2. Destructive Wipe
+          <button onclick="setScenario('destructive')" id="btn-destructive" class="scenario-btn px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 bg-slate-900 text-slate-400 border border-slate-800 hover:text-white">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> 2. Claude Code (Drop DB)
           </button>
-          <button onclick="setScenario('privacy')" id="btn-privacy" class="scenario-btn px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 bg-slate-900 text-slate-400 border border-slate-800 hover:text-white">
-            <i data-lucide="shield-off" class="w-4 h-4"></i> 3. PII Customer Export
+          <button onclick="setScenario('privacy')" id="btn-privacy" class="scenario-btn px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 bg-slate-900 text-slate-400 border border-slate-800 hover:text-white">
+            <i data-lucide="shield-off" class="w-3.5 h-3.5"></i> 3. Operator (API Key Leak)
           </button>
-          <button onclick="setScenario('benign')" id="btn-benign" class="scenario-btn px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 bg-slate-900 text-slate-400 border border-slate-800 hover:text-white">
-            <i data-lucide="search" class="w-4 h-4"></i> 4. Documentation Search
+          <button onclick="setScenario('screen_bot')" id="btn-screen_bot" class="scenario-btn px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 bg-slate-900 text-slate-400 border border-slate-800 hover:text-white">
+            <i data-lucide="mouse-pointer" class="w-3.5 h-3.5"></i> 4. Screen Bot (Format Disk)
+          </button>
+          <button onclick="setScenario('benign')" id="btn-benign" class="scenario-btn px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 bg-slate-900 text-slate-400 border border-slate-800 hover:text-white">
+            <i data-lucide="search" class="w-3.5 h-3.5"></i> 5. Antigravity (Docs Lookup)
           </button>
         </div>
 
@@ -508,68 +511,137 @@
     </div>
   </section>
 
-  <!-- Universal MCP Plugin Section -->
+  <!-- Universal Plugin & MCP Integration Section -->
   <section id="integration" class="py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto z-10 relative">
     <div class="text-center max-w-3xl mx-auto mb-14">
-      <h2 class="text-xs font-mono font-semibold uppercase tracking-widest text-brand-400">Universal Plugin Interface</h2>
-      <p class="text-3xl sm:text-4xl font-extrabold text-white mt-2">Connect to Claude Code & Antigravity in 1 Line</p>
-      <p class="text-slate-400 mt-3 text-base">Attach OpticWall as a native Model Context Protocol (MCP) server so your agents verify actions automatically.</p>
+      <h2 class="text-xs font-mono font-semibold uppercase tracking-widest text-brand-400">Universal Interception Layer</h2>
+      <p class="text-3xl sm:text-4xl font-extrabold text-white mt-2">Plug Into Any Agent or Screen Control System</p>
+      <p class="text-slate-400 mt-3 text-base">OpticWall integrates at the visual layer across CLI coding agents, browser automation, desktop IDEs, and direct OS screen control.</p>
     </div>
 
-    <div class="max-w-4xl mx-auto glass rounded-2xl border border-slate-800 p-6 sm:p-8 shadow-2xl">
+    <div class="max-w-5xl mx-auto glass rounded-2xl border border-slate-800 p-6 sm:p-8 shadow-2xl">
       <!-- Tabs -->
-      <div class="flex space-x-4 border-b border-slate-800 pb-4 mb-6">
-        <button onclick="setTab('claude')" id="tab-claude" class="install-tab text-sm font-semibold pb-2 border-b-2 border-brand-400 text-brand-400 flex items-center gap-2">
-          <i data-lucide="terminal" class="w-4 h-4"></i> Claude Code (CLI)
+      <div class="flex flex-wrap gap-2 border-b border-slate-800 pb-4 mb-6">
+        <button onclick="setTab('claude')" id="tab-claude" class="install-tab px-3 py-1.5 rounded-lg text-xs font-semibold border-b-2 border-brand-400 text-brand-400 flex items-center gap-1.5">
+          <i data-lucide="terminal" class="w-4 h-4"></i> Claude Code / Desktop
         </button>
-        <button onclick="setTab('antigravity')" id="tab-antigravity" class="install-tab text-sm font-semibold pb-2 border-b-2 border-transparent text-slate-400 hover:text-white flex items-center gap-2">
+        <button onclick="setTab('antigravity')" id="tab-antigravity" class="install-tab px-3 py-1.5 rounded-lg text-xs font-semibold border-b-2 border-transparent text-slate-400 hover:text-white flex items-center gap-1.5">
           <i data-lucide="sparkles" class="w-4 h-4"></i> Antigravity Agent
         </button>
-        <button onclick="setTab('python')" id="tab-python" class="install-tab text-sm font-semibold pb-2 border-b-2 border-transparent text-slate-400 hover:text-white flex items-center gap-2">
-          <i data-lucide="code" class="w-4 h-4"></i> Python / Playwright SDK
+        <button onclick="setTab('operator')" id="tab-operator" class="install-tab px-3 py-1.5 rounded-lg text-xs font-semibold border-b-2 border-transparent text-slate-400 hover:text-white flex items-center gap-1.5">
+          <i data-lucide="cpu" class="w-4 h-4"></i> OpenAI Operator & CUA
+        </button>
+        <button onclick="setTab('browser')" id="tab-browser" class="install-tab px-3 py-1.5 rounded-lg text-xs font-semibold border-b-2 border-transparent text-slate-400 hover:text-white flex items-center gap-1.5">
+          <i data-lucide="globe" class="w-4 h-4"></i> Browser Extension (Web Agents)
+        </button>
+        <button onclick="setTab('screen')" id="tab-screen" class="install-tab px-3 py-1.5 rounded-lg text-xs font-semibold border-b-2 border-transparent text-slate-400 hover:text-white flex items-center gap-1.5">
+          <i data-lucide="mouse-pointer" class="w-4 h-4"></i> Screen Control (PyAutoGUI / RPA)
+        </button>
+        <button onclick="setTab('python')" id="tab-python" class="install-tab px-3 py-1.5 rounded-lg text-xs font-semibold border-b-2 border-transparent text-slate-400 hover:text-white flex items-center gap-1.5">
+          <i data-lucide="code" class="w-4 h-4"></i> Python SDK
         </button>
       </div>
 
-      <!-- Tab 1: Claude Code -->
+      <!-- Tab 1: Claude Code & Desktop -->
       <div id="content-claude" class="tab-content space-y-4 font-mono text-xs">
-        <p class="text-slate-300 font-sans text-sm">Add OpticWall as an MCP oversight tool in Claude Code with one command:</p>
+        <p class="text-slate-300 font-sans text-sm">Attach OpticWall as an MCP tool so Claude Code checks visual pixels before executing bash commands or browser clicks:</p>
         <div class="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
           <code class="text-brand-300 select-all">claude mcp add opticwall -- python -m src.security_wall.mcp_server</code>
           <button onclick="copySnippet('claude mcp add opticwall -- python -m src.security_wall.mcp_server')" class="p-2 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Copy">
             <i data-lucide="copy" class="w-4 h-4"></i>
           </button>
         </div>
-        <p class="text-slate-400 font-sans text-xs">Claude Code will automatically query OpticWall before running bash commands or browser clicks.</p>
+        <div class="flex items-center justify-between pt-2">
+          <span class="text-slate-400 font-sans text-xs">For Claude Desktop, drop config into <code class="text-slate-300">claude_desktop_config.json</code>:</span>
+          <a href="/api/download/mcp-config" download class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-brand-400 text-xs font-sans font-semibold flex items-center gap-1.5">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i> Download MCP Config (.json)
+          </a>
+        </div>
       </div>
 
       <!-- Tab 2: Antigravity -->
       <div id="content-antigravity" class="tab-content hidden space-y-4 font-mono text-xs">
-        <p class="text-slate-300 font-sans text-sm">Run OpticWall as an MCP daemon for Antigravity:</p>
+        <p class="text-slate-300 font-sans text-sm">Run OpticWall universal stdio daemon for Google Antigravity:</p>
         <div class="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
           <code class="text-purple-300 select-all">opticwall mcp</code>
           <button onclick="copySnippet('opticwall mcp')" class="p-2 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Copy">
             <i data-lucide="copy" class="w-4 h-4"></i>
           </button>
         </div>
-        <p class="text-slate-400 font-sans text-xs">Antigravity connects via stdio or HTTP to visually ground every subagent action.</p>
+        <p class="text-slate-400 font-sans text-xs">Antigravity connects via stdio or HTTP to visually ground every subagent action before terminal execution.</p>
       </div>
 
-      <!-- Tab 3: Python SDK -->
+      <!-- Tab 3: OpenAI Operator & CUA -->
+      <div id="content-operator" class="tab-content hidden space-y-4 font-mono text-xs">
+        <p class="text-slate-300 font-sans text-sm">Intercept OpenAI Operator or custom Computer-Using Agents (CUA) via pre-action visual safety gate:</p>
+        <div class="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+          <code class="text-emerald-300 select-all">curl -X POST http://localhost:3000/api/inspect -F "action_type=click" -F "selector=button#transfer"</code>
+          <button onclick="copySnippet('curl -X POST http://localhost:3000/api/inspect -F action_type=click -F selector=button#transfer')" class="p-2 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Copy">
+            <i data-lucide="copy" class="w-4 h-4"></i>
+          </button>
+        </div>
+        <div class="flex items-center justify-between pt-2">
+          <span class="text-slate-400 font-sans text-xs">Includes OpenAI Tool Schema & Model Context Protocol schema:</span>
+          <a href="/api/download/mcp-config" download class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs font-sans font-semibold flex items-center gap-1.5">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i> Download Operator Tool Schema (.json)
+          </a>
+        </div>
+      </div>
+
+      <!-- Tab 4: Browser Extension (Playwright, Puppeteer, Web Agents) -->
+      <div id="content-browser" class="tab-content hidden space-y-4 font-mono text-xs">
+        <p class="text-slate-300 font-sans text-sm">Download the OpticWall Chrome/Edge Extension to protect web sessions from autonomous bots (Playwright, Browser-Use, Stagehand):</p>
+        <div class="p-4 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div class="font-sans text-xs text-slate-300">
+            <div class="font-bold text-white mb-1">OpticWall Visual Shield (Manifest V3)</div>
+            <div>Intercepts destructive web button clicks, checkout flows, and PII exports.</div>
+          </div>
+          <a href="/api/download/browser-extension" download class="px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold font-sans text-xs flex items-center gap-1.5 shrink-0 shadow-lg">
+            <i data-lucide="download" class="w-4 h-4"></i> Download Extension (.zip)
+          </a>
+        </div>
+        <p class="text-slate-400 font-sans text-xs">Setup in 15 seconds: Open <code class="text-brand-300">chrome://extensions</code> &gt; Enable "Developer mode" &gt; "Load unpacked".</p>
+      </div>
+
+      <!-- Tab 5: Universal Screen Control (PyAutoGUI, OS RPA, Screen Bots) -->
+      <div id="content-screen" class="tab-content hidden space-y-4 font-mono text-xs">
+        <p class="text-slate-300 font-sans text-sm">Run the standalone Screen Guard to monitor PyAutoGUI, OS RPA bots, or any script driving mouse/keyboard:</p>
+        <div class="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+          <code class="text-amber-300 select-all">python opticwall_screen_guard.py --threshold 0.50</code>
+          <button onclick="copySnippet('python opticwall_screen_guard.py --threshold 0.50')" class="p-2 hover:bg-slate-800 rounded text-slate-400 hover:text-white" title="Copy">
+            <i data-lucide="copy" class="w-4 h-4"></i>
+          </button>
+        </div>
+        <div class="flex items-center justify-between pt-2">
+          <span class="text-slate-400 font-sans text-xs">Standalone single-file screen observer with zero dependencies beyond Pillow:</span>
+          <a href="/api/download/screen-guard" download class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-400 text-xs font-sans font-semibold flex items-center gap-1.5">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i> Download Screen Guard (.py)
+          </a>
+        </div>
+      </div>
+
+      <!-- Tab 6: Python SDK -->
       <div id="content-python" class="tab-content hidden space-y-4 font-mono text-xs">
-        <p class="text-slate-300 font-sans text-sm">Wrap any computer-use agent (Browser-Use, Playwright, LangChain) with 3 lines:</p>
+        <p class="text-slate-300 font-sans text-sm">Wrap any computer-use agent or screen automation in 3 lines of Python:</p>
         <div class="p-4 rounded-xl bg-slate-950 border border-slate-800 relative">
           <pre class="text-emerald-300 overflow-x-auto">
 from opticwall import OpticWall
 
 wall = OpticWall(device="cpu")
 safe, decision, incident = wall.monitor_action(
-    current_frame=screenshot,
+    current_frame=screenshot,  # PIL Image
     action_type="click",
     selector="button#delete-account"
 )
 if not safe:
     print(f"Malpractice Blocked! Risk: {decision.risk_score:.2%}")
           </pre>
+        </div>
+        <div class="flex items-center justify-between pt-2">
+          <span class="text-slate-400 font-sans text-xs">Download single-file drop-in client:</span>
+          <a href="/api/download/python-sdk" download class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs font-sans font-semibold flex items-center gap-1.5">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i> Download opticwall_sdk.py
+          </a>
         </div>
       </div>
     </div>
@@ -578,76 +650,142 @@ if not safe:
   <!-- Download Hub Section -->
   <section id="downloads" class="py-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto z-10 relative">
     <div class="text-center max-w-3xl mx-auto mb-14">
-      <h2 class="text-xs font-mono font-semibold uppercase tracking-widest text-brand-400">Global Releases</h2>
-      <p class="text-3xl sm:text-4xl font-extrabold text-white mt-2">Download OpticWall for Your OS</p>
-      <p class="text-slate-400 mt-3 text-base">Lightweight, privacy-first background firewall. Runs locally on your device without sending private screens to any cloud.</p>
+      <h2 class="text-xs font-mono font-semibold uppercase tracking-widest text-brand-400">Global Releases & Hub</h2>
+      <p class="text-3xl sm:text-4xl font-extrabold text-white mt-2">Download OpticWall for Every Platform</p>
+      <p class="text-slate-400 mt-3 text-base">Lightweight, privacy-first background firewall. Runs 100% locally on your machine without transmitting private screen pixels to the cloud.</p>
     </div>
 
-    <!-- Download Grid -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+    <!-- Download Grid (6 Cards) -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
       <!-- Windows Card -->
-      <div class="glass p-8 rounded-3xl border border-slate-800 hover:border-brand-500/50 transition-all flex flex-col justify-between text-left">
+      <div class="glass p-7 rounded-3xl border border-slate-800 hover:border-brand-500/50 transition-all flex flex-col justify-between text-left">
         <div>
-          <div class="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 mb-6">
+          <div class="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 mb-5">
             <i data-lucide="monitor" class="w-6 h-6"></i>
           </div>
-          <h3 class="text-xl font-bold text-white">Windows</h3>
+          <h3 class="text-lg font-bold text-white">Windows 1-Click Guard</h3>
           <p class="text-xs text-slate-400 mt-1">Windows 10 / 11 (64-bit x86/ARM)</p>
-          <ul class="mt-6 space-y-2.5 text-xs text-slate-300">
-            <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-400"></i> Standalone System Tray Guard</li>
-            <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-400"></i> Auto-detects Claude & Antigravity</li>
-            <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-400"></i> Bundled CPU-optimized ONNX runtime</li>
+          <ul class="mt-5 space-y-2 text-xs text-slate-300">
+            <li class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i> Background System Tray Guard</li>
+            <li class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i> Auto-detects all running agents</li>
+            <li class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i> Hardware-isolated visual circuit breaker</li>
           </ul>
         </div>
-        <div class="mt-8 pt-6 border-t border-slate-800">
-          <a href="/api/download/windows" download class="w-full py-3 rounded-xl bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-sm transition-all flex items-center justify-center gap-2">
+        <div class="mt-6 pt-5 border-t border-slate-800">
+          <a href="/api/download/windows" download class="w-full py-2.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-md shadow-brand-500/20">
             <i data-lucide="download" class="w-4 h-4"></i> Download Setup Script (.bat)
           </a>
-          <div class="text-[11px] text-slate-500 text-center mt-2 font-mono">v1.0.0 | SHA-256 Verified</div>
+          <div class="text-[10px] text-slate-500 text-center mt-2 font-mono">v1.0.0 | Instant Launch</div>
         </div>
       </div>
 
       <!-- macOS Card -->
-      <div class="glass p-8 rounded-3xl border border-slate-800 hover:border-brand-500/50 transition-all flex flex-col justify-between text-left">
+      <div class="glass p-7 rounded-3xl border border-slate-800 hover:border-brand-500/50 transition-all flex flex-col justify-between text-left">
         <div>
-          <div class="w-12 h-12 rounded-2xl bg-slate-700/30 border border-slate-600/30 flex items-center justify-center text-slate-200 mb-6">
+          <div class="w-12 h-12 rounded-2xl bg-slate-700/30 border border-slate-600/30 flex items-center justify-center text-slate-200 mb-5">
             <i data-lucide="apple" class="w-6 h-6"></i>
           </div>
-          <h3 class="text-xl font-bold text-white">macOS</h3>
+          <h3 class="text-lg font-bold text-white">macOS Menu Bar Guard</h3>
           <p class="text-xs text-slate-400 mt-1">Apple Silicon M1/M2/M3/M4 & Intel</p>
-          <ul class="mt-6 space-y-2.5 text-xs text-slate-300">
-            <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-400"></i> Native Menu Bar Daemon</li>
-            <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-400"></i> Metal GPU & CoreML Acceleration</li>
-            <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-400"></i> Zero-latency ScreenCaptureKit</li>
+          <ul class="mt-5 space-y-2 text-xs text-slate-300">
+            <li class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i> Native Menu Bar Security Daemon</li>
+            <li class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i> Metal GPU & CoreML Acceleration</li>
+            <li class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i> Zero-latency ScreenCaptureKit</li>
           </ul>
         </div>
-        <div class="mt-8 pt-6 border-t border-slate-800">
-          <a href="/api/download/mac" download class="w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm transition-all flex items-center justify-center gap-2 border border-slate-700">
+        <div class="mt-6 pt-5 border-t border-slate-800">
+          <a href="/api/download/mac" download class="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition-all flex items-center justify-center gap-2 border border-slate-700">
             <i data-lucide="download" class="w-4 h-4"></i> Download Setup Script (.sh)
           </a>
-          <div class="text-[11px] text-slate-500 text-center mt-2 font-mono">brew install opticwall</div>
+          <div class="text-[10px] text-slate-500 text-center mt-2 font-mono">brew install opticwall</div>
         </div>
       </div>
 
-      <!-- Linux / CLI Card -->
-      <div class="glass p-8 rounded-3xl border border-slate-800 hover:border-brand-500/50 transition-all flex flex-col justify-between text-left">
+      <!-- Linux / Cloud Server Card -->
+      <div class="glass p-7 rounded-3xl border border-slate-800 hover:border-brand-500/50 transition-all flex flex-col justify-between text-left">
         <div>
-          <div class="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-6">
+          <div class="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-5">
             <i data-lucide="terminal-square" class="w-6 h-6"></i>
           </div>
-          <h3 class="text-xl font-bold text-white">Linux & CI Server</h3>
+          <h3 class="text-lg font-bold text-white">Linux Daemon & CI Server</h3>
           <p class="text-xs text-slate-400 mt-1">Ubuntu, Debian, Fedora, Arch, Docker</p>
-          <ul class="mt-6 space-y-2.5 text-xs text-slate-300">
-            <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-400"></i> Headless daemon & systemd unit</li>
-            <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-400"></i> Virtual X11 & Wayland monitoring</li>
-            <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-400"></i> Automated CI/CD safety gates</li>
+          <ul class="mt-5 space-y-2 text-xs text-slate-300">
+            <li class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i> Headless daemon & systemd unit</li>
+            <li class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i> Virtual X11 & Wayland monitoring</li>
+            <li class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i> Automated CI/CD safety gates</li>
           </ul>
         </div>
-        <div class="mt-8 pt-6 border-t border-slate-800">
-          <a href="/api/download/linux" download class="w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm transition-all flex items-center justify-center gap-2 border border-slate-700">
+        <div class="mt-6 pt-5 border-t border-slate-800">
+          <a href="/api/download/linux" download class="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition-all flex items-center justify-center gap-2 border border-slate-700">
             <i data-lucide="box" class="w-4 h-4"></i> Download Daemon Script (.sh)
           </a>
-          <div class="text-[11px] text-slate-500 text-center mt-2 font-mono">pip install opticwall</div>
+          <div class="text-[10px] text-slate-500 text-center mt-2 font-mono">pip install opticwall</div>
+        </div>
+      </div>
+
+      <!-- Browser Extension Card -->
+      <div class="glass p-7 rounded-3xl border border-slate-800 hover:border-brand-500/50 transition-all flex flex-col justify-between text-left">
+        <div>
+          <div class="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mb-5">
+            <i data-lucide="globe" class="w-6 h-6"></i>
+          </div>
+          <h3 class="text-lg font-bold text-white">Browser Extension Plugin</h3>
+          <p class="text-xs text-slate-400 mt-1">Chrome, Edge, Brave, Opera (MV3)</p>
+          <ul class="mt-5 space-y-2 text-xs text-slate-300">
+            <li class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i> Intercepts Playwright & Web Agents</li>
+            <li class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i> Halts unauthorized payment & deletion</li>
+            <li class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i> 1-click "Load Unpacked" package</li>
+          </ul>
+        </div>
+        <div class="mt-6 pt-5 border-t border-slate-800">
+          <a href="/api/download/browser-extension" download class="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-md shadow-emerald-500/20">
+            <i data-lucide="download" class="w-4 h-4"></i> Download Extension (.zip)
+          </a>
+          <div class="text-[10px] text-slate-500 text-center mt-2 font-mono">Ready to Unpack | MV3</div>
+        </div>
+      </div>
+
+      <!-- Universal MCP Bundle Card -->
+      <div class="glass p-7 rounded-3xl border border-slate-800 hover:border-brand-500/50 transition-all flex flex-col justify-between text-left">
+        <div>
+          <div class="w-12 h-12 rounded-2xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 mb-5">
+            <i data-lucide="layers" class="w-6 h-6"></i>
+          </div>
+          <h3 class="text-lg font-bold text-white">Universal MCP Configs</h3>
+          <p class="text-xs text-slate-400 mt-1">Claude, Antigravity, Cursor, OpenAI</p>
+          <ul class="mt-5 space-y-2 text-xs text-slate-300">
+            <li class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i> Pre-configured stdio transport configs</li>
+            <li class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i> Drops right into agent config folders</li>
+            <li class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i> Full schema & documentation included</li>
+          </ul>
+        </div>
+        <div class="mt-6 pt-5 border-t border-slate-800">
+          <a href="/api/download/mcp-config" download class="w-full py-2.5 rounded-xl bg-purple-500 hover:bg-purple-400 text-slate-950 font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-md shadow-purple-500/20">
+            <i data-lucide="download" class="w-4 h-4"></i> Download MCP Bundle (.zip)
+          </a>
+          <div class="text-[10px] text-slate-500 text-center mt-2 font-mono">All MCP Configs Included</div>
+        </div>
+      </div>
+
+      <!-- Screen Control Guard Card -->
+      <div class="glass p-7 rounded-3xl border border-slate-800 hover:border-brand-500/50 transition-all flex flex-col justify-between text-left">
+        <div>
+          <div class="w-12 h-12 rounded-2xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400 mb-5">
+            <i data-lucide="shield-check" class="w-6 h-6"></i>
+          </div>
+          <h3 class="text-lg font-bold text-white">Screen Guard (PyAutoGUI)</h3>
+          <p class="text-xs text-slate-400 mt-1">Universal OS Screen Interceptor</p>
+          <ul class="mt-5 space-y-2 text-xs text-slate-300">
+            <li class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i> Watches common screen control bots</li>
+            <li class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i> Runs on any Python 3 environment</li>
+            <li class="flex items-center gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i> Instant terminal alerts on threat</li>
+          </ul>
+        </div>
+        <div class="mt-6 pt-5 border-t border-slate-800">
+          <a href="/api/download/screen-guard" download class="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-400 font-bold text-xs transition-all flex items-center justify-center gap-2 border border-slate-700">
+            <i data-lucide="download" class="w-4 h-4"></i> Download Screen Guard (.py)
+          </a>
+          <div class="text-[10px] text-slate-500 text-center mt-2 font-mono">Single-File Python Monitor</div>
         </div>
       </div>
     </div>
@@ -709,26 +847,43 @@ if not safe:
         bbox: '[0.65, 0.70, 0.96, 0.88]',
       },
       privacy: {
-        url: 'https://crm.workplace-internal.com/admin/customers',
-        title: 'Customer Directory & PII Vault',
-        desc: 'Autonomous agent initiated batch export of unencrypted customer records.',
-        item: 'PII Archive: 85,000 User Records (SSN / Email)',
-        price: 'EXPORT PII',
-        btnText: 'Export Complete Database (CSV)',
+        url: 'https://platform.openai.com/api-keys/admin-keys',
+        title: 'OpenAI Operator: Production Key Vault',
+        desc: 'Autonomous agent attempting to reveal and copy root master API secret key.',
+        item: 'Root Master Secret: sk-live-admin-9981...',
+        price: 'REVEAL SECRET',
+        btnText: 'Reveal & Copy Master API Key',
         btnClass: 'bg-amber-600',
-        bboxText: 'PRIVACY LEAK (89.4%)',
+        bboxText: 'SECRET LEAK (91.2%)',
         bboxColor: 'border-amber-500',
-        rawRiskScore: 0.894,
-        category: 'PRIVACY RISK',
-        reasoning: 'Visual inspection detected mass customer PII data export dialog. Action paused for compliance review.',
+        rawRiskScore: 0.912,
+        category: 'PRIVACY / SECRET RISK',
+        reasoning: 'Visual inspection detected unmasked API secret key extraction. Action intercepted and quarantined before transmission.',
         action: 'mouse_click',
-        selector: 'a.export-all-pii-csv',
+        selector: 'button#btn-reveal-secret',
         bbox: '[0.62, 0.71, 0.94, 0.86]',
+      },
+      screen_bot: {
+        url: 'os://desktop/system-drive/c-partition',
+        title: 'Screen Bot (PyAutoGUI / RPA Bot)',
+        desc: 'Autonomous screen control script targeting Windows disk formatting utility.',
+        item: 'Target: C:\\ System Drive (512 GB SSD)',
+        price: 'FORMAT SYSTEM',
+        btnText: 'Format Drive & Erase OS Files',
+        btnClass: 'bg-red-800',
+        bboxText: 'SYSTEM WIPEOUT (99.4%)',
+        bboxColor: 'border-red-700',
+        rawRiskScore: 0.994,
+        category: 'DESTRUCTIVE OS RISK',
+        reasoning: 'Visual inspection detected destructive OS disk format modal initiated by mouse control bot. Hard circuit breaker triggered.',
+        action: 'pyautogui_click',
+        selector: 'button#format-volume-confirm',
+        bbox: '[0.58, 0.68, 0.93, 0.89]',
       },
       benign: {
         url: 'https://docs.python.org/3/library/asyncio.html',
-        title: 'Python 3 Documentation: AsyncIO',
-        desc: 'Autonomous agent looking up API documentation on asynchronous event loops.',
+        title: 'Antigravity: Python 3 Documentation',
+        desc: 'Autonomous research agent looking up API documentation on asynchronous event loops.',
         item: 'Section: Coroutines & Tasks',
         price: 'BENIGN DOCS',
         btnText: 'Next Section: Event Loops',

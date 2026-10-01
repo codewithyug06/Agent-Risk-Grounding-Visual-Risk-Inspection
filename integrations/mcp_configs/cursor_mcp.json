@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "opticwall": {
+      "command": "python",
+      "args": ["-m", "src.security_wall.mcp_server"],
+      "description": "OpticWall: Pre-Execution Safety Inspection for Cursor AI Agent & Shell Commands"
+    }
+  }
+}

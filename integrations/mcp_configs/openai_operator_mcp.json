@@ -1,0 +1,25 @@
+{
+  "name": "opticwall-guard",
+  "version": "1.0.0",
+  "description": "Visual safety gate for OpenAI Operator & Computer-Using Agents",
+  "tools": [
+    {
+      "name": "opticwall_inspect_action",
+      "description": "Inspect visual screen buffer before executing OS clicks or bash commands",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "action_type": { "type": "string", "enum": ["click", "type", "drag", "bash"] },
+          "target_selector": { "type": "string" },
+          "coordinates": { "type": "array", "items": { "type": "number" } }
+        },
+        "required": ["action_type"]
+      }
+    }
+  ],
+  "transport": {
+    "type": "stdio",
+    "command": "python",
+    "args": ["-m", "src.security_wall.mcp_server"]
+  }
+}

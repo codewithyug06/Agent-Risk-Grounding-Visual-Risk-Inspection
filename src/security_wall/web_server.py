@@ -139,7 +139,7 @@ async def api_inspect_image(
         "category": decision.category,
         "category_conf": round(float(decision.category_conf), 4),
         "reasoning": decision.reasoning,
-        "bbox": list(decision.bbox) if decision.bbox else [0.65, 0.70, 0.95, 0.88],
+        "bbox": [float(x) for x in decision.bbox] if decision.bbox else [0.65, 0.70, 0.95, 0.88],
         "heatmap": heatmap_grid,
         "timestamp": datetime.now().isoformat(),
         "action_type": action_type,
@@ -183,20 +183,76 @@ async def api_get_incidents():
     return {"incidents": records[:20], "total": len(records)}
 
 
-@app.get("/api/download/{platform}")
-async def api_download_installer(platform: str):
+import zipfile
+
+
+def make_zip_response(source_dir: Path, zip_filename: str) -> Response:
+    """Helper to pack a directory into an in-memory zip file response."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in source_dir.rglob("*"):
+            if f.is_file():
+                arcname = f.relative_to(source_dir)
+                zf.write(f, arcname)
+    buf.seek(0)
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename={zip_filename}"}
+    )
+
+
+@app.get("/api/download/{item}")
+async def api_download_item(item: str):
     """
-    Generate and serve tailored installation packages & launchers
-    for Windows, macOS, or Linux.
+    Generate and serve tailored downloads:
+    - OS Installers: windows, mac, linux
+    - Browser Extension: browser-extension (Chrome / Edge / Brave MV3 zip)
+    - MCP Config Bundle: mcp-config (Claude, Antigravity, Cursor, OpenAI Operator)
+    - Screen Control Guard: screen-guard (universal python background monitor)
+    - Python SDK: python-sdk (drop-in client)
     """
-    platform = platform.lower()
-    
-    if platform in ["windows", "win", "exe"]:
+    key = item.lower().replace("_", "-")
+    integrations_dir = REPO_ROOT / "integrations"
+
+    if key in ["browser-extension", "extension", "chrome", "edge"]:
+        ext_dir = integrations_dir / "browser_extension"
+        if ext_dir.exists():
+            return make_zip_response(ext_dir, "opticwall-chrome-extension.zip")
+        raise HTTPException(status_code=404, detail="Browser extension package not found")
+
+    elif key in ["mcp-config", "mcp-bundle", "mcp"]:
+        mcp_dir = integrations_dir / "mcp_configs"
+        if mcp_dir.exists():
+            return make_zip_response(mcp_dir, "opticwall-mcp-configs.zip")
+        raise HTTPException(status_code=404, detail="MCP config bundle not found")
+
+    elif key in ["screen-guard", "screenguard", "guard"]:
+        sg_file = integrations_dir / "screen_guard" / "opticwall_screen_guard.py"
+        if sg_file.exists():
+            return FileResponse(
+                path=str(sg_file),
+                media_type="text/x-python",
+                filename="opticwall_screen_guard.py"
+            )
+        raise HTTPException(status_code=404, detail="Screen guard script not found")
+
+    elif key in ["python-sdk", "sdk", "python"]:
+        sdk_file = integrations_dir / "opticwall_sdk.py"
+        if sdk_file.exists():
+            return FileResponse(
+                path=str(sdk_file),
+                media_type="text/x-python",
+                filename="opticwall_sdk.py"
+            )
+        raise HTTPException(status_code=404, detail="Python SDK file not found")
+
+    elif key in ["windows", "win", "exe", "bat"]:
         script_content = (
             "@echo off\r\n"
-            "title OpticWall Guard Installer\r\n"
+            "title OpticWall Desktop Security Guard\r\n"
             "echo ==================================================================\r\n"
-            "echo [*] Installing OpticWall Desktop Security Guard for Windows\r\n"
+            "echo [*] Installing OpticWall Desktop Visual Firewall for Windows\r\n"
             "echo ==================================================================\r\n"
             "python --version >nul 2>&1\r\n"
             "if %errorlevel% neq 0 (\r\n"
@@ -204,11 +260,11 @@ async def api_download_installer(platform: str):
             "    pause\r\n"
             "    exit /b 1\r\n"
             ")\r\n"
-            "echo [+] Installing opticwall core package...\r\n"
+            "echo [+] Installing OpticWall dependencies...\r\n"
             "pip install opticwall psutil pillow mss fastapi uvicorn onnxruntime\r\n"
-            "echo [+] Initializing OpticWall Desktop Guard...\r\n"
-            "start \"OpticWall Guard\" python -m src.security_wall.cli watch --checkpoint checkpoints/stage_c/best.pt\r\n"
-            "echo [v] OpticWall is now armed and watching agent actions.\r\n"
+            "echo [+] Initializing OpticWall Background Guard...\r\n"
+            "start \"OpticWall Guard\" python -m src.security_wall.cli watch\r\n"
+            "echo [v] OpticWall is now armed and watching autonomous agent actions.\r\n"
             "pause\r\n"
         )
         return Response(
@@ -217,7 +273,7 @@ async def api_download_installer(platform: str):
             headers={"Content-Disposition": "attachment; filename=opticwall-guard-setup.bat"}
         )
 
-    elif platform in ["mac", "macos", "darwin"]:
+    elif key in ["mac", "macos", "darwin"]:
         script_content = (
             "#!/usr/bin/env bash\n"
             "echo '=================================================================='\n"
@@ -234,7 +290,7 @@ async def api_download_installer(platform: str):
             headers={"Content-Disposition": "attachment; filename=opticwall-guard-setup.sh"}
         )
 
-    else:  # Linux
+    else:  # Linux / default
         script_content = (
             "#!/usr/bin/env bash\n"
             "set -e\n"

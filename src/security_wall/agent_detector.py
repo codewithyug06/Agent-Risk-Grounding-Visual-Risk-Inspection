@@ -41,7 +41,7 @@ class DetectedAgent:
     risk_level: str  # 'monitored', 'high_privilege', 'unrestricted'
 
 
-# Signatures for known autonomous AI agents
+# Signatures for known autonomous AI agents and screen-control systems
 AGENT_SIGNATURES = [
     {
         "name": "Claude Code",
@@ -65,6 +65,41 @@ AGENT_SIGNATURES = [
         "risk_level": "high_privilege",
     },
     {
+        "name": "OpenAI Operator / CUA",
+        "category": "screen_agent",
+        "process_names": ["operator.exe", "operator", "python.exe", "python"],
+        "cmdline_keywords": ["openai-operator", "operator", "computer-use-agent", "cua", "openai_cua"],
+        "risk_level": "high_privilege",
+    },
+    {
+        "name": "Browser-Use / Stagehand Agent",
+        "category": "browser_agent",
+        "process_names": ["python.exe", "python", "node.exe", "node"],
+        "cmdline_keywords": ["browser_use", "browser-use", "stagehand", "browsergym"],
+        "risk_level": "high_privilege",
+    },
+    {
+        "name": "Playwright / Puppeteer Automation",
+        "category": "browser_agent",
+        "process_names": ["python.exe", "python", "node.exe", "node", "cmd.exe"],
+        "cmdline_keywords": ["playwright", "puppeteer", "@playwright/mcp", "playwright-mcp"],
+        "risk_level": "high_privilege",
+    },
+    {
+        "name": "OpenHands / OpenDevin",
+        "category": "os_agent",
+        "process_names": ["python.exe", "python", "docker.exe", "docker"],
+        "cmdline_keywords": ["openhands", "opendevin", "open-hands"],
+        "risk_level": "high_privilege",
+    },
+    {
+        "name": "OSWorld Autonomous Agent",
+        "category": "os_agent",
+        "process_names": ["python.exe", "python"],
+        "cmdline_keywords": ["osworld", "os-world", "agenttrek"],
+        "risk_level": "high_privilege",
+    },
+    {
         "name": "Cursor Agent",
         "category": "ide_agent",
         "process_names": ["cursor.exe", "cursor"],
@@ -72,17 +107,24 @@ AGENT_SIGNATURES = [
         "risk_level": "high_privilege",
     },
     {
-        "name": "Browser-Use / Playwright Agent",
-        "category": "browser_agent",
-        "process_names": ["python.exe", "python", "node.exe", "node"],
-        "cmdline_keywords": ["browser_use", "browser-use", "playwright", "puppeteer", "agent_browser"],
-        "risk_level": "high_privilege",  # Can submit forms, make purchases, delete data
+        "name": "Windsurf Cascade Agent",
+        "category": "ide_agent",
+        "process_names": ["windsurf.exe", "windsurf"],
+        "cmdline_keywords": ["windsurf", "cascade"],
+        "risk_level": "high_privilege",
     },
     {
-        "name": "Autonomous Python Agent (LangChain / AutoGen / CrewAI)",
+        "name": "Universal Screen Control (PyAutoGUI / OS RPA)",
+        "category": "screen_control_bot",
+        "process_names": ["python.exe", "python", "pythonw.exe", "pythonw"],
+        "cmdline_keywords": ["pyautogui", "pynput", "mouse", "keyboard", "pywinauto", "uiautomation"],
+        "risk_level": "high_privilege",  # Direct OS hardware mouse/keyboard simulation
+    },
+    {
+        "name": "Autonomous Multi-Agent Framework (CrewAI / AutoGen / LangChain)",
         "category": "python_agent",
         "process_names": ["python.exe", "python", "python3"],
-        "cmdline_keywords": ["crewai", "autogen", "langchain", "computer_use", "pyautogui"],
+        "cmdline_keywords": ["crewai", "autogen", "langchain", "computer_use"],
         "risk_level": "high_privilege",
     },
 ]

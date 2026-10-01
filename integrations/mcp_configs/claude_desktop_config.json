@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "opticwall": {
+      "command": "python",
+      "args": ["-m", "src.security_wall.mcp_server"],
+      "description": "OpticWall: Visual Safety Firewall for AI Agents (Pre-Action Pixel Risk Grounding)"
+    }
+  }
+}

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      width: 280px;
+      margin: 0;
+      padding: 16px;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #060913;
+      color: #f8fafc;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #1e293b;
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #34d399;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      padding: 3px 8px;
+      border-radius: 9999px;
+    }
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #34d399;
+    }
+    .card {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 12px;
+      font-size: 12px;
+    }
+    .toggle-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .btn {
+      display: block;
+      width: 100%;
+      text-align: center;
+      padding: 8px 0;
+      background: #0284c7;
+      color: #fff;
+      font-size: 12px;
+      font-weight: bold;
+      border-radius: 6px;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .btn:hover {
+      background: #0369a1;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div style="font-weight: 800; font-size: 14px;">OPTIC<span style="color:#38bdf8;">WALL</span></div>
+    <div class="status-badge">
+      <span class="status-dot"></span>
+      <span id="shield-status">ARMED</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="toggle-row">
+      <span style="color: #94a3b8;">Local Engine:</span>
+      <span id="engine-status" style="color: #38bdf8; font-weight: bold;">Checking...</span>
+    </div>
+    <div class="toggle-row">
+      <span style="color: #94a3b8;">Detected Agents:</span>
+      <span id="agent-count" style="color: #f1f5f9; font-weight: bold;">--</span>
+    </div>
+    <div class="toggle-row">
+      <span style="color: #94a3b8;">Risk Threshold:</span>
+      <span style="color: #f87171; font-weight: bold;">0.50 (Strict)</span>
+    </div>
+  </div>
+
+  <a href="http://localhost:3000" target="_blank" class="btn">Open OpticWall Dashboard</a>
+
+  <script src="popup.js"></script>
+</body>
+</html>

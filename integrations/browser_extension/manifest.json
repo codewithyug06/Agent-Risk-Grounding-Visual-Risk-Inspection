@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "OpticWall - AI Agent Visual Safety Firewall",
+  "version": "1.0.0",
+  "description": "Real-time visual security firewall for autonomous browser agents (Playwright, Browser-Use, OpenAI Operator, Claude). Intercepts destructive actions before execution.",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://localhost:3000/*",
+    "http://127.0.0.1:3000/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "OpticWall Visual Shield"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

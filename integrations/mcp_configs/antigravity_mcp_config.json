@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "opticwall": {
+      "command": "python",
+      "args": ["-m", "src.security_wall.mcp_server"],
+      "env": {
+        "OPTICWALL_MODE": "strict",
+        "OPTICWALL_THRESHOLD": "0.50"
+      },
+      "description": "OpticWall: Spatiotemporal Visual Oversight Firewall for Subagents & Browser Actions"
+    }
+  }
+}

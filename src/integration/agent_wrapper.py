@@ -204,7 +204,17 @@ class SentinelWrapper:
     def add_frame(self, frame: Optional[Image.Image] = None):
         """Add frame to buffer. Captures screenshot if frame not provided."""
         if frame is None:
-            frame = asyncio.run(self.capture.capture())
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+
+            if loop is not None and loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    frame = pool.submit(asyncio.run, self.capture.capture()).result()
+            else:
+                frame = asyncio.run(self.capture.capture())
         self.frame_buffer.add_frame(frame)
 
     async def add_frame_async(self, frame: Optional[Image.Image] = None):
@@ -320,13 +330,16 @@ class SentinelWrapper:
             parts.append(f"Coordinates: {action.coordinates}")
         return " | ".join(parts)
 
-    def intercept_action(self, action: AgentAction) -> Tuple[SentinelDecision, bool]:
+    def intercept_action(self, action: AgentAction, frame: Optional[Image.Image] = None) -> Tuple[SentinelDecision, bool]:
         """
         Intercept an agent action. Returns (decision, should_proceed).
         should_proceed=False means action should be blocked.
         """
-        # Capture current screen
-        self.add_frame()
+        # Capture current screen if buffer is empty or explicit frame passed
+        if frame is not None:
+            self.add_frame(frame)
+        elif len(self.frame_buffer) == 0:
+            self.add_frame()
 
         # Predict
         prediction = self.predict()
