@@ -1,15 +1,17 @@
 <!DOCTYPE html>
-<html lang="en" class="dark scroll-smooth">
+<html lang="en" class="scroll-smooth dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OpticWall — Screen-State Firewall for Autonomous Desktop Agents</title>
-  <meta name="description" content="An out-of-band visual firewall that intercepts OS mouse clicks and keystrokes from Claude Code, Operator, and browser agents, verifying screen state before actions execute." />
+  <title>OpticWall | Cyber Cockpit HUD & Visual Security Firewall for Autonomous AI Agents</title>
+  <meta name="description" content="OpticWall: The zero-trust, pixels-only visual security firewall for autonomous AI agents, computer-use models, browser automation, and screen control bots." />
 
-  <!-- Fonts & Icons -->
+  <!-- Fonts: Orbitron (Cyber), Plus Jakarta Sans (UI), JetBrains Mono (Code/HUD) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS & Lucide Icons -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
 
@@ -19,23 +21,38 @@
       theme: {
         extend: {
           fontFamily: {
-            sans: ['"Inter"', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
-            mono: ['"JetBrains Mono"', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+            cyber: ['"Orbitron"', 'sans-serif'],
           },
           colors: {
+            cyan: {
+              400: '#00f0ff',
+              500: '#00d0e0',
+              600: '#00a3b0',
+            },
             brand: {
-              50: '#f0fdf4',
-              500: '#22c55e',
-              600: '#16a34a',
+              400: '#38bdf8',
+              500: '#0284c7',
+              600: '#0369a1',
             },
-            surface: {
-              50: '#f8fafc',
-              800: '#1e2430',
-              850: '#161b24',
-              900: '#0f131a',
-              950: '#0a0d13',
+            danger: {
+              400: '#ff3366',
+              500: '#ef4444',
+              600: '#dc2626',
             },
-            line: '#242c3d'
+            matrix: {
+              400: '#10b981',
+              500: '#059669',
+            },
+            dark: {
+              970: '#02040a',
+              950: '#050814',
+              900: '#080d1a',
+              850: '#0d1527',
+              800: '#131e36',
+              700: '#1f2e4d',
+            }
           }
         }
       }
@@ -44,388 +61,481 @@
 
   <style>
     body {
-      background-color: #0a0d13;
-      color: #e2e8f0;
-      letter-spacing: -0.011em;
+      background-color: #02040a;
+      color: #f1f5f9;
+      overflow-x: hidden;
     }
-    .panel {
-      background: #0f131a;
-      border: 1px solid #202738;
+
+    /* Cyber Glows */
+    .glow-cyan {
+      box-shadow: 0 0 25px -5px rgba(0, 240, 255, 0.35);
     }
-    .panel-subtle {
-      background: #141923;
-      border: 1px solid #252e42;
+    .glow-red {
+      box-shadow: 0 0 30px -5px rgba(239, 68, 68, 0.45);
     }
-    ::selection {
-      background: #2563eb;
-      color: #ffffff;
+    .glow-matrix {
+      box-shadow: 0 0 25px -5px rgba(16, 185, 129, 0.35);
     }
-    code, pre {
-      font-family: 'JetBrains Mono', monospace;
+    .border-glow-cyan {
+      border-color: rgba(0, 240, 255, 0.35);
     }
-    /* Subtle dot grid */
-    .hero-grid {
-      background-image: radial-gradient(#1e2638 1px, transparent 1px);
-      background-size: 24px 24px;
+
+    /* Laser scanline across viewport */
+    @keyframes laser-scan {
+      0% { top: 0%; opacity: 0.9; }
+      50% { opacity: 0.3; }
+      100% { top: 100%; opacity: 0.9; }
     }
+    .laser-line {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #00f0ff, #38bdf8, transparent);
+      box-shadow: 0 0 15px #00f0ff, 0 0 30px #00f0ff;
+      animation: laser-scan 3.2s ease-in-out infinite alternate;
+      pointer-events: none;
+      z-index: 20;
+    }
+
+    /* Radar sweep animation */
+    @keyframes radar-sweep {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .animate-radar {
+      animation: radar-sweep 4s linear infinite;
+    }
+
+    /* Continuous Ticker Marquee */
+    @keyframes marquee {
+      0% { transform: translateX(0%); }
+      100% { transform: translateX(-50%); }
+    }
+    .animate-marquee {
+      display: flex;
+      width: 200%;
+      animation: marquee 28s linear infinite;
+    }
+    .animate-marquee:hover {
+      animation-play-state: paused;
+    }
+
+    /* Shockwave circuit breaker effect */
+    @keyframes shockwave {
+      0% { transform: scale(0.97); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.9); }
+      60% { transform: scale(1.01); box-shadow: 0 0 0 35px rgba(239, 68, 68, 0); }
+      100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+    .trigger-shockwave {
+      animation: shockwave 0.75s cubic-bezier(0.1, 0.9, 0.2, 1);
+    }
+
+    /* Screen shake on blocked event */
+    @keyframes screen-shake {
+      0%, 100% { transform: translate(0, 0); }
+      15% { transform: translate(-6px, 4px); }
+      30% { transform: translate(6px, -4px); }
+      45% { transform: translate(-4px, 2px); }
+      60% { transform: translate(4px, -2px); }
+      75% { transform: translate(-2px, 1px); }
+    }
+    .trigger-shake {
+      animation: screen-shake 0.45s ease-in-out;
+    }
+
+    /* Subtle grid line background */
+    .cyber-grid {
+      background-size: 36px 36px;
+      background-image: 
+        linear-gradient(to right, rgba(0, 240, 255, 0.035) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(0, 240, 255, 0.035) 1px, transparent 1px);
+    }
+
+    /* Corner HUD bracket styling */
+    .hud-bracket {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      border-color: #00f0ff;
+      pointer-events: none;
+    }
+    .hud-tl { top: -2px; left: -2px; border-top: 2px solid; border-left: 2px solid; }
+    .hud-tr { top: -2px; right: -2px; border-top: 2px solid; border-right: 2px solid; }
+    .hud-bl { bottom: -2px; left: -2px; border-bottom: 2px solid; border-left: 2px solid; }
+    .hud-br { bottom: -2px; right: -2px; border-bottom: 2px solid; border-right: 2px solid; }
+
+    /* Custom high-tech scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #02040a; }
+    ::-webkit-scrollbar-thumb { background: #131e36; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #00f0ff; }
   </style>
 </head>
 
-<body class="antialiased text-sm">
+<body class="antialiased selection:bg-cyan-500 selection:text-black">
 
-  <!-- Toast Notification -->
-  <div id="toast" class="fixed bottom-6 right-6 z-50 transform translate-y-20 opacity-0 transition-all duration-200 panel px-4 py-3 rounded-md shadow-2xl flex items-center gap-3 border border-slate-700 pointer-events-none">
-    <i data-lucide="info" class="w-4 h-4 text-emerald-400"></i>
-    <span id="toast-text" class="text-slate-200 text-xs font-mono font-medium">Notification</span>
+  <!-- Interactive Particle Background Canvas -->
+  <canvas id="cyber-canvas" class="fixed inset-0 pointer-events-none z-0 opacity-40"></canvas>
+
+  <!-- Audio Synthesizer Feedback Toast -->
+  <div id="toast" class="fixed bottom-6 right-6 z-50 transform translate-y-24 opacity-0 transition-all duration-300 bg-dark-900/95 backdrop-blur-md px-4 py-3 rounded-lg shadow-2xl flex items-center gap-3 border border-cyan-500/40 glow-cyan pointer-events-none">
+    <i data-lucide="shield-alert" id="toast-icon" class="w-5 h-5 text-cyan-400"></i>
+    <div>
+      <div id="toast-title" class="text-xs font-cyber text-cyan-300 font-bold uppercase tracking-wider">HUD ALERT</div>
+      <div id="toast-text" class="text-xs font-mono text-slate-300 mt-0.5">OpticWall Visual Circuit Breaker Armed</div>
+    </div>
   </div>
 
-  <!-- Top Announcement Bar -->
-  <aside class="bg-surface-900 border-b border-line px-4 py-1.5 text-xs text-slate-400">
-    <div class="max-w-6xl mx-auto flex items-center justify-between">
-      <div class="flex items-center gap-2">
-        <span class="inline-block w-2 h-2 rounded-full bg-emerald-400"></span>
-        <span class="text-slate-300 font-medium">OpticWall v1.0.0</span>
-        <span class="text-slate-500 hidden sm:inline">— Screen-State Firewall for Computer-Use Agents</span>
-      </div>
-      <div class="flex items-center gap-4 text-[11px] font-mono">
-        <a href="https://github.com/codewithyug06/Agent-Risk-Grounding-Visual-Risk-Inspection" target="_blank" class="hover:text-slate-200 transition-colors flex items-center gap-1">
-          <i data-lucide="git-branch" class="w-3.5 h-3.5 text-slate-400"></i> main branch
-        </a>
-        <span class="text-slate-600">|</span>
-        <span id="engine-status-text" class="text-emerald-400 font-medium">Daemon: 127.0.0.1:3000 (Active)</span>
-      </div>
+  <!-- Global Threat Ticker (Real-Time Marquee) -->
+  <div class="relative z-40 bg-dark-950 border-b border-slate-800 text-xs py-1.5 overflow-hidden font-mono select-none">
+    <div class="animate-marquee whitespace-nowrap text-slate-400 flex items-center gap-8">
+      <span class="inline-flex items-center gap-2">
+        <span class="px-1.5 py-0.2 rounded bg-danger-500/20 text-danger-400 font-bold text-[10px] border border-danger-500/40">HARD_BLOCK</span>
+        <span class="text-slate-200">Claude Code</span> • Shell: <code>rm -rf /var/production/db</code> • Destructive (98.7%)
+      </span>
+      <span class="text-slate-600">✦</span>
+      <span class="inline-flex items-center gap-2">
+        <span class="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-400 font-bold text-[10px] border border-amber-500/40">PAUSE_HALT</span>
+        <span class="text-slate-200">Browser-Use</span> • Checkout: <code>$499.00 Enterprise Annual</code> • Financial (94.2%)
+      </span>
+      <span class="text-slate-600">✦</span>
+      <span class="inline-flex items-center gap-2">
+        <span class="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-400 font-bold text-[10px] border border-purple-500/40">QUARANTINED</span>
+        <span class="text-slate-200">OpenAI Operator</span> • Key Vault: <code>sk-live-master-secret</code> • Privacy (91.2%)
+      </span>
+      <span class="text-slate-600">✦</span>
+      <span class="inline-flex items-center gap-2">
+        <span class="px-1.5 py-0.2 rounded bg-danger-500/20 text-danger-400 font-bold text-[10px] border border-danger-500/40">INTERCEPTED</span>
+        <span class="text-slate-200">PyAutoGUI Screen Bot</span> • Drive Utility: <code>format C: /FS:NTFS</code> • Kernel Wipe (99.4%)
+      </span>
+      <span class="text-slate-600">✦</span>
+      <span class="inline-flex items-center gap-2">
+        <span class="px-1.5 py-0.2 rounded bg-matrix-500/20 text-matrix-400 font-bold text-[10px] border border-matrix-500/40">PASSTHROUGH</span>
+        <span class="text-slate-200">Antigravity Agent</span> • Docs Search: <code>python.org/asyncio</code> • Verified Benign (3.1%)
+      </span>
     </div>
-  </aside>
+  </div>
 
-  <!-- Navigation -->
-  <header class="sticky top-0 z-40 bg-surface-950/90 backdrop-blur-md border-b border-line">
-    <div class="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
+  <!-- Primary Cyber Cockpit Navbar -->
+  <header class="sticky top-0 z-40 bg-dark-950/85 backdrop-blur-xl border-b border-slate-800">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
       
-      <!-- Brand Identity -->
+      <!-- Brand Logo & Live HUD Status -->
       <div class="flex items-center gap-6">
-        <a href="#" class="flex items-center gap-2.5 font-bold text-white text-base tracking-tight">
-          <div class="w-6 h-6 rounded bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
-            <i data-lucide="shield" class="w-3.5 h-3.5 text-emerald-400"></i>
+        <a href="#" class="flex items-center gap-2.5 font-cyber text-lg font-black tracking-wider text-white group">
+          <div class="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-400/40 flex items-center justify-center glow-cyan transition-transform group-hover:scale-105">
+            <i data-lucide="shield" class="w-4 h-4 text-cyan-400"></i>
           </div>
-          <span>OpticWall</span>
+          <span>OPTIC<span class="text-cyan-400">WALL</span></span>
         </a>
 
-        <div class="hidden lg:flex items-center gap-2 px-2.5 py-0.5 rounded text-[11px] font-mono bg-surface-850 border border-line text-slate-400">
-          <span>INT8 ViT ONNX</span>
-          <span class="text-slate-600">•</span>
-          <span>~140ms on CPU</span>
-          <span class="text-slate-600">•</span>
-          <span>Zero Network Egress</span>
+        <!-- Engine HUD Telemetry Pill -->
+        <div class="hidden lg:flex items-center gap-3 px-3 py-1 rounded-full bg-dark-900 border border-slate-800 font-mono text-xs">
+          <span class="flex h-2 w-2 relative">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-matrix-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-matrix-400"></span>
+          </span>
+          <span class="text-slate-400">ENGINE: <span class="text-matrix-400 font-semibold" id="engine-hud-text">ONLINE (140ms on CPU)</span></span>
+          <span class="text-slate-600">|</span>
+          <span class="text-slate-400">HOST: <span class="text-cyan-400 font-semibold" id="host-hud-text">127.0.0.1:3000</span></span>
         </div>
       </div>
 
-      <!-- Links -->
-      <nav class="hidden md:flex items-center gap-6 text-xs text-slate-400">
-        <a href="#how-it-works" class="hover:text-white transition-colors">Architecture</a>
-        <a href="#demo" class="hover:text-white transition-colors">Live Inspector</a>
-        <a href="#active-agents" class="hover:text-white transition-colors">Agent Discovery</a>
-        <a href="#install" class="hover:text-white transition-colors">Install &amp; Config</a>
-        <a href="#faq" class="hover:text-white transition-colors">Technical FAQ</a>
+      <!-- Navigation Links -->
+      <nav class="hidden md:flex items-center gap-6 font-mono text-xs text-slate-400">
+        <a href="#cockpit" class="hover:text-cyan-400 transition-colors flex items-center gap-1.5">
+          <i data-lucide="crosshair" class="w-3.5 h-3.5"></i> Cockpit HUD
+        </a>
+        <a href="#radar" class="hover:text-cyan-400 transition-colors flex items-center gap-1.5">
+          <i data-lucide="radar" class="w-3.5 h-3.5"></i> Threat Radar
+        </a>
+        <a href="#agents" class="hover:text-cyan-400 transition-colors flex items-center gap-1.5">
+          <i data-lucide="cpu" class="w-3.5 h-3.5"></i> Process Matrix
+        </a>
+        <a href="#matrix" class="hover:text-cyan-400 transition-colors flex items-center gap-1.5">
+          <i data-lucide="download" class="w-3.5 h-3.5"></i> Release Hub
+        </a>
       </nav>
 
-      <!-- Primary Action -->
+      <!-- Action Utilities: Audio Toggle, Command Launcher & Download -->
       <div class="flex items-center gap-3">
-        <a href="https://github.com/codewithyug06/Agent-Risk-Grounding-Visual-Risk-Inspection" target="_blank" class="p-1.5 rounded hover:bg-surface-850 text-slate-400 hover:text-white transition-colors border border-transparent hover:border-line" title="Source Code">
-          <i data-lucide="github" class="w-4 h-4"></i>
-        </a>
-        <a href="#install" class="px-3.5 py-1.5 text-xs font-semibold rounded bg-white hover:bg-slate-200 text-slate-950 transition-colors">
-          Get Started
+        <!-- Audio Synthesizer Toggle -->
+        <button onclick="toggleAudio()" id="audio-toggle-btn" class="p-2 rounded-lg bg-dark-900 border border-slate-800 hover:border-cyan-500/40 text-cyan-400 transition-all hover:scale-105" title="Toggle Futuristic Audio SFX (Key: M)">
+          <i data-lucide="volume-2" id="audio-icon" class="w-4 h-4"></i>
+        </button>
+
+        <!-- Command Palette Trigger (Ctrl + K) -->
+        <button onclick="openCmdPalette()" class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-dark-900 border border-slate-800 hover:border-cyan-500/40 text-slate-400 hover:text-white transition-all font-mono text-xs">
+          <i data-lucide="terminal" class="w-3.5 h-3.5 text-cyan-400"></i>
+          <span>Cmd Launcher</span>
+          <kbd class="px-1.5 py-0.5 rounded bg-dark-800 border border-slate-700 text-[10px] text-slate-300">Ctrl K</kbd>
+        </button>
+
+        <a href="#matrix" class="px-4 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-cyber text-xs font-bold transition-all glow-cyan hover:scale-105">
+          INSTALL GUARD
         </a>
       </div>
     </div>
   </header>
 
   <!-- Hero Section -->
-  <section class="pt-16 pb-16 px-4 max-w-6xl mx-auto hero-grid border-b border-line">
-    <div class="max-w-3xl">
+  <section class="relative z-10 pt-16 pb-16 px-4 max-w-7xl mx-auto cyber-grid">
+    <div class="max-w-4xl mx-auto text-center">
       
-      <div class="inline-flex items-center gap-2 px-3 py-1 rounded bg-surface-850 border border-line text-xs text-slate-300 mb-6 font-mono">
-        <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
-        <span>Out-of-band policy enforcement for OS computer-use models</span>
+      <!-- Status Badge -->
+      <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-cyan-950/40 border border-cyan-500/30 text-xs font-mono text-cyan-300 mb-6 glow-cyan">
+        <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+        <span>OUT-OF-BAND VISUAL CIRCUIT BREAKER FOR COMPUTER-USE AGENTS</span>
       </div>
 
-      <h1 class="text-3xl sm:text-5xl font-bold tracking-tight text-white leading-[1.15]">
-        Inspect screen pixels before autonomous agents execute mouse and keyboard events.
+      <!-- Main Headline -->
+      <h1 class="text-4xl sm:text-6xl font-cyber font-extrabold tracking-tight text-white leading-tight">
+        STOP AUTONOMOUS AGENTS FROM <br/>
+        <span class="bg-gradient-to-r from-cyan-400 via-sky-300 to-rose-400 bg-clip-text text-transparent">CLICKING DANGEROUS BUTTONS.</span>
       </h1>
 
-      <p class="mt-5 text-base text-slate-400 leading-relaxed font-normal">
-        Autonomous agents (Claude Code, OpenAI Operator, Browser-Use, OSWorld) can execute arbitrary desktop actions. When an agent experiences indirect prompt injection or coordinate hallucination, its declared tool call may claim a benign operation while its cursor targets a destructive dialog.
+      <p class="mt-6 text-base sm:text-lg text-slate-400 leading-relaxed font-sans max-w-3xl mx-auto">
+        When Claude Code, OpenAI Operator, Cursor, or browser bots run on your computer, prompt guardrails won't save you. When a model hallucinates coordinates or gets hijacked by indirect prompt injection, OpticWall intercepts the click before your OS dispatches it, verifies physical screen pixels in ~140ms, and drops the action.
       </p>
 
-      <p class="mt-3 text-base text-slate-400 leading-relaxed font-normal">
-        OpticWall intercepts the event stream at the window server layer, captures the framebuffer directly under the target coordinates, runs an on-device quantized Vision Transformer in ~140ms on CPU, and drops the action if destructive patterns are identified.
-      </p>
-
-      <!-- Quick Command Row -->
-      <div class="mt-8 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-        <div class="flex items-center justify-between panel rounded px-4 py-2.5 font-mono text-xs text-slate-200 max-w-md w-full border border-line">
-          <span class="select-all text-emerald-400">$ pip install opticwall && opticwall watch</span>
-          <button onclick="copySnippet('pip install opticwall && opticwall watch')" class="text-slate-500 hover:text-white transition-colors ml-3" title="Copy CLI Command">
+      <!-- Quick Command Block -->
+      <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
+        <div class="flex items-center justify-between bg-dark-900 border border-cyan-500/30 rounded-xl px-4 py-3 font-mono text-xs text-slate-200 max-w-md w-full glow-cyan">
+          <span class="text-cyan-400 select-all">$ pip install opticwall && opticwall watch</span>
+          <button onclick="copySnippet('pip install opticwall && opticwall watch')" class="text-slate-400 hover:text-white transition-colors ml-3" title="Copy Command">
             <i data-lucide="copy" class="w-4 h-4"></i>
           </button>
         </div>
-        <a href="#demo" class="px-4 py-2.5 rounded bg-surface-800 hover:bg-surface-700 text-slate-200 font-medium text-xs transition-colors flex items-center justify-center gap-1.5 border border-line">
-          Inspect Sample Actions <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+
+        <a href="#cockpit" class="px-6 py-3 rounded-xl bg-danger-500 hover:bg-danger-600 text-white font-cyber text-xs font-bold transition-all glow-red flex items-center gap-2 hover:scale-105">
+          <i data-lucide="crosshair" class="w-4 h-4"></i>
+          TEST LIVE COCKPIT
         </a>
       </div>
 
-    </div>
+      <!-- Live Metric Tags -->
+      <div class="mt-12 grid grid-cols-2 sm:grid-cols-4 gap-4 max-w-3xl mx-auto text-left font-mono">
+        <div class="p-3.5 rounded-xl bg-dark-900/80 border border-slate-800">
+          <div class="text-[11px] text-slate-500 uppercase">Evaluation Latency</div>
+          <div class="text-lg font-bold text-cyan-400 font-cyber mt-0.5">~138 ms</div>
+          <div class="text-[10px] text-slate-400">On-Device CPU (INT8)</div>
+        </div>
+        <div class="p-3.5 rounded-xl bg-dark-900/80 border border-slate-800">
+          <div class="text-[11px] text-slate-500 uppercase">Network Egress</div>
+          <div class="text-lg font-bold text-matrix-400 font-cyber mt-0.5">0 BYTES</div>
+          <div class="text-[10px] text-slate-400">100% Local Airgap</div>
+        </div>
+        <div class="p-3.5 rounded-xl bg-dark-900/80 border border-slate-800">
+          <div class="text-[11px] text-slate-500 uppercase">Capture Hook</div>
+          <div class="text-lg font-bold text-sky-400 font-cyber mt-0.5">DXGI / SCKit</div>
+          <div class="text-[10px] text-slate-400">&lt;12ms Compositor Tap</div>
+        </div>
+        <div class="p-3.5 rounded-xl bg-dark-900/80 border border-slate-800">
+          <div class="text-[11px] text-slate-500 uppercase">Protection State</div>
+          <div class="text-lg font-bold text-danger-400 font-cyber mt-0.5">ZERO TRUST</div>
+          <div class="text-[10px] text-slate-400">Hardware Event Filter</div>
+        </div>
+      </div>
 
-    <!-- Real Event Interception Log Terminal -->
-    <div class="mt-12 panel rounded-lg overflow-hidden font-mono text-xs border border-line">
-      <div class="px-4 py-2 bg-surface-900 border-b border-line flex items-center justify-between text-slate-500">
-        <div class="flex items-center gap-2">
-          <div class="flex items-center gap-1.5">
-            <span class="w-2.5 h-2.5 rounded-full bg-slate-700"></span>
-            <span class="w-2.5 h-2.5 rounded-full bg-slate-700"></span>
-            <span class="w-2.5 h-2.5 rounded-full bg-slate-700"></span>
-          </div>
-          <span class="ml-2 text-slate-400 text-[11px]">opticwall-daemon.log — stdout</span>
-        </div>
-        <div class="text-[11px] text-slate-400 flex items-center gap-1.5">
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-          <span>Interception Filter: ACTIVE</span>
-        </div>
-      </div>
-      <div class="p-4 bg-surface-950 text-slate-300 space-y-1.5 leading-relaxed overflow-x-auto text-[11px]">
-        <div class="text-slate-500">2026-10-02T11:04:12.102Z [INFO] OpticWall daemon initialized. Listening on local IPC socket.</div>
-        <div class="text-slate-500">2026-10-02T11:04:12.115Z [INFO] Discovered 19 running autonomous agent processes (Claude Code, Agv, Playwright).</div>
-        <div class="text-slate-400">2026-10-02T11:04:38.410Z [INTERCEPT] Agent PID 25460 requested mouse_click at (x=840, y=520). Window: "AWS Management Console"</div>
-        <div class="text-slate-400">2026-10-02T11:04:38.422Z [VISION] DXGI screen capture completed in 11.8ms. Cropped 448x448 patch around cursor.</div>
-        <div class="text-slate-400">2026-10-02T11:04:38.560Z [INFERENCE] ONNX ViT-Patch runtime: 138.4ms (CPU, 4 threads). Target: "Drop Database & Wipe Volumes"</div>
-        <div class="text-rose-400 font-semibold">2026-10-02T11:04:38.561Z [VERDICT] BLOCKED (Score: 0.987, Policy: destructive.cloud.resource_wipe). Input event dropped.</div>
-        <div class="text-amber-400">2026-10-02T11:04:38.562Z [ACTION] Suspended PID 25460 via SIGSTOP. Evidence recorded to ~/.opticwall/incidents/INC-20261002_110438.png</div>
-        <div class="text-slate-400">2026-10-02T11:04:38.563Z [AWAIT] Prompting user on local display: [A]llow / [D]rop / [K]ill process?</div>
-      </div>
     </div>
   </section>
 
-  <!-- Technical Architecture & Pipeline -->
-  <section id="how-it-works" class="py-16 px-4 max-w-6xl mx-auto border-b border-line">
-    <div class="max-w-2xl mb-10">
-      <div class="text-xs font-mono text-emerald-400 uppercase tracking-wider mb-2">Technical Specification</div>
-      <h2 class="text-2xl font-bold text-white tracking-tight">How OpticWall enforces policy out-of-band</h2>
-      <p class="text-slate-400 mt-2 text-sm leading-relaxed">
-        Software-only guardrails trust the LLM to report its own behavior accurately. When an agent is confused by multi-modal layout shifts or compromised by prompt injection, its internal chain-of-thought diverges from what is physically rendered on screen.
-      </p>
-    </div>
-
-    <!-- Architecture Grid -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-      
-      <div class="panel p-5 rounded-lg border border-line">
-        <div class="font-mono text-xs text-slate-500 mb-2">01 / CAPTURE HOOK</div>
-        <h3 class="font-semibold text-white text-sm">Low-latency framebuffer tap</h3>
-        <p class="text-xs text-slate-400 mt-2 leading-relaxed">
-          Before an OS mouse click or keyboard sequence reaches the target window, the input filter grabs a localized 448x448 pixel patch around the cursor using native OS compositors (DXGI Desktop Duplication, ScreenCaptureKit, or X11 SHM). Latency: &lt;14ms.
-        </p>
-      </div>
-
-      <div class="panel p-5 rounded-lg border border-line">
-        <div class="font-mono text-xs text-slate-500 mb-2">02 / VISUAL INFERENCE</div>
-        <h3 class="font-semibold text-white text-sm">Local Vision Transformer</h3>
-        <p class="text-xs text-slate-400 mt-2 leading-relaxed">
-          An INT8 quantized Vision Transformer classifies the rendered UI elements against trained destructive classes: cloud infrastructure teardown, unconfirmed billing, credential exfiltration, and disk format routines. Runs in ~140ms on modern CPUs.
-        </p>
-      </div>
-
-      <div class="panel p-5 rounded-lg border border-line">
-        <div class="font-mono text-xs text-slate-500 mb-2">03 / CIRCUIT BREAKER</div>
-        <h3 class="font-semibold text-white text-sm">Deterministic event drop</h3>
-        <p class="text-xs text-slate-400 mt-2 leading-relaxed">
-          If the risk score exceeds the configured threshold, the input event is discarded before reaching the application. The offending agent process is sent a freeze signal (SIGSTOP), and a forensic snapshot is saved to local disk for audit review.
-        </p>
-      </div>
-
-    </div>
-
-    <!-- Execution Sequence Diagram -->
-    <div class="mt-8 panel p-6 rounded-lg border border-line font-mono text-xs">
-      <div class="text-slate-400 font-semibold mb-4 text-[11px] uppercase tracking-wider flex items-center justify-between">
-        <span>Execution Pipeline</span>
-        <span class="text-slate-500">Synchronous Evaluation Loop (&lt;160ms total)</span>
-      </div>
-      <div class="bg-surface-950 p-4 rounded border border-line text-slate-300 overflow-x-auto text-[11px] leading-relaxed">
-[ Agent Execution Loop ]  ──(1. Dispatches Click)──►  [ OpticWall Input Tap ]
-                                                               │
-                                                               ▼ (2. Grab Framebuffer, 12ms)
-                                                      [ Native Compositor Buffer ]
-                                                               │
-                                                               ▼ (3. ViT-S/16 INT8, 138ms)
-                                                      [ Local Risk Classifier ]
-                                                               │
-                             ┌─────────────────────────────────┴─────────────────────────────────┐
-                             │ Risk Score &gt;= Policy Threshold (0.50)                             │ Risk Score &lt; Threshold
-                             ▼                                                                   ▼
-                 [ CIRCUIT BREAKER TRIPPED ]                                          [ PASSTHROUGH PERMITTED ]
-                 • Discard input event packet                                         • Forward click to OS Window Server
-                 • Dispatch SIGSTOP to Agent PID                                      • Agent continues task uninterrupted
-                 • Write forensic frame to ~/.opticwall/incidents/
-      </div>
-    </div>
-  </section>
-
-  <!-- Interactive Live Inspector -->
-  <section id="demo" class="py-16 px-4 max-w-6xl mx-auto border-b border-line">
-    <div class="flex flex-col sm:flex-row sm:items-end justify-between mb-8 gap-4">
+  <!-- 1. Interactive Cyber Cockpit HUD & Visual Sandbox 🎯 -->
+  <section id="cockpit" class="relative z-10 py-16 px-4 max-w-7xl mx-auto border-t border-slate-800/80">
+    <div class="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
       <div>
-        <div class="text-xs font-mono text-emerald-400 uppercase tracking-wider mb-1">Interactive Diagnostic Console</div>
-        <h2 class="text-2xl font-bold text-white tracking-tight">Test visual risk inspection in real-time</h2>
-        <p class="text-slate-400 mt-1 text-xs">Simulate agent targets or test your own desktop screenshot against the local model.</p>
+        <div class="text-xs font-cyber text-cyan-400 uppercase tracking-widest flex items-center gap-1.5 mb-1">
+          <i data-lucide="crosshair" class="w-3.5 h-3.5 text-cyan-400"></i> Visual Risk Sandbox &amp; Cockpit HUD
+        </div>
+        <h2 class="text-3xl font-cyber font-bold text-white tracking-tight">Interactive Circuit Breaker</h2>
+        <p class="text-slate-400 text-xs font-sans mt-1">Simulate high-risk autonomous agent click dispatches and inspect visual bounding box telemetry.</p>
       </div>
 
-      <div class="flex items-center gap-2">
-        <label class="px-3 py-1.5 rounded text-xs font-medium cursor-pointer panel hover:bg-surface-850 text-slate-300 border border-line flex items-center gap-1.5 transition-colors">
-          <i data-lucide="upload" class="w-3.5 h-3.5 text-slate-400"></i> Upload Screenshot
+      <!-- Action: Upload or Paste Custom Image -->
+      <div class="flex items-center gap-3">
+        <label class="px-3.5 py-2 rounded-lg bg-dark-900 hover:bg-dark-850 text-slate-300 border border-slate-800 hover:border-cyan-500/40 text-xs font-mono font-medium flex items-center gap-2 cursor-pointer transition-all">
+          <i data-lucide="upload" class="w-4 h-4 text-cyan-400"></i>
+          <span>Upload Image</span>
           <input type="file" id="file-uploader" accept="image/*" class="hidden" onchange="handleFileUpload(event)">
         </label>
-        <button onclick="pasteFromClipboard()" class="px-3 py-1.5 rounded text-xs font-medium panel hover:bg-surface-850 text-slate-300 border border-line flex items-center gap-1.5 transition-colors">
-          <i data-lucide="clipboard" class="w-3.5 h-3.5 text-slate-400"></i> Paste (Ctrl+V)
+        <button onclick="pasteFromClipboard()" class="px-3.5 py-2 rounded-lg bg-dark-900 hover:bg-dark-850 text-slate-300 border border-slate-800 hover:border-cyan-500/40 text-xs font-mono font-medium flex items-center gap-2 transition-all">
+          <i data-lucide="clipboard" class="w-4 h-4 text-cyan-400"></i>
+          <span>Paste (Ctrl+V)</span>
         </button>
       </div>
     </div>
 
-    <!-- Scenario Selector -->
-    <div class="flex flex-wrap gap-2 mb-6">
-      <button onclick="setScenario('destructive')" id="btn-destructive" class="scenario-btn px-3 py-1.5 rounded text-xs font-medium bg-white text-slate-950 transition-colors">
-        AWS Drop Database
+    <!-- 5 Dynamic Attack Scenarios Selector -->
+    <div class="flex flex-wrap gap-2.5 mb-6">
+      <button onclick="setScenario('destructive')" id="btn-destructive" class="scenario-btn px-4 py-2 rounded-lg text-xs font-cyber font-semibold bg-danger-500 text-white glow-red transition-all">
+        1. Claude Code: DROP DATABASE
       </button>
-      <button onclick="setScenario('financial')" id="btn-financial" class="scenario-btn px-3 py-1.5 rounded text-xs font-medium bg-surface-900 text-slate-400 hover:text-white border border-line transition-colors">
-        Stripe $499 Checkout
+      <button onclick="setScenario('financial')" id="btn-financial" class="scenario-btn px-4 py-2 rounded-lg text-xs font-cyber font-semibold bg-dark-900 text-slate-400 hover:text-white border border-slate-800 transition-all">
+        2. Browser-Use: $499 CHECKOUT
       </button>
-      <button onclick="setScenario('privacy')" id="btn-privacy" class="scenario-btn px-3 py-1.5 rounded text-xs font-medium bg-surface-900 text-slate-400 hover:text-white border border-line transition-colors">
-        Expose Master API Key
+      <button onclick="setScenario('privacy')" id="btn-privacy" class="scenario-btn px-4 py-2 rounded-lg text-xs font-cyber font-semibold bg-dark-900 text-slate-400 hover:text-white border border-slate-800 transition-all">
+        3. OpenAI Operator: API KEY VAULT
       </button>
-      <button onclick="setScenario('screen_bot')" id="btn-screen_bot" class="scenario-btn px-3 py-1.5 rounded text-xs font-medium bg-surface-900 text-slate-400 hover:text-white border border-line transition-colors">
-        Format OS System Drive
+      <button onclick="setScenario('screen_bot')" id="btn-screen_bot" class="scenario-btn px-4 py-2 rounded-lg text-xs font-cyber font-semibold bg-dark-900 text-slate-400 hover:text-white border border-slate-800 transition-all">
+        4. Screen Bot: FORMAT OS DRIVE
       </button>
-      <button onclick="setScenario('benign')" id="btn-benign" class="scenario-btn px-3 py-1.5 rounded text-xs font-medium bg-surface-900 text-slate-400 hover:text-white border border-line transition-colors">
-        Python Documentation (Safe)
+      <button onclick="setScenario('benign')" id="btn-benign" class="scenario-btn px-4 py-2 rounded-lg text-xs font-cyber font-semibold bg-dark-900 text-slate-400 hover:text-white border border-slate-800 transition-all">
+        5. Antigravity: PYTHON DOCS (SAFE)
       </button>
     </div>
 
-    <!-- Inspector Grid -->
+    <!-- Viewport & Telemetry Grid -->
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
       
-      <!-- Framebuffer Display Viewport -->
-      <div class="lg:col-span-7 panel rounded-lg overflow-hidden border border-line">
-        <div class="px-4 py-2 bg-surface-900 border-b border-line flex items-center justify-between text-xs text-slate-400 font-mono">
-          <div class="flex items-center gap-2 truncate max-w-sm">
-            <span class="w-2 h-2 rounded-full bg-slate-600"></span>
-            <span id="sim-url" class="truncate text-slate-300">https://console.cloud-provider.internal/db/clusters/prod-db-01</span>
+      <!-- Left: Laser-Scanline Viewport with Corner Reticles -->
+      <div id="cockpit-container" class="lg:col-span-7 bg-dark-950 rounded-2xl border border-slate-800 overflow-hidden relative shadow-2xl transition-all">
+        
+        <!-- Active Laser Scanline Animation -->
+        <div class="laser-line"></div>
+
+        <!-- Viewport Top Bar -->
+        <div class="px-4 py-2.5 bg-dark-900 border-b border-slate-800 flex items-center justify-between text-xs font-mono text-slate-400">
+          <div class="flex items-center gap-2 truncate max-w-md">
+            <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse"></span>
+            <span id="sim-url" class="truncate text-slate-300 font-mono text-[11px]">https://console.cloud-provider.internal/db/clusters/prod-db-01</span>
           </div>
-          <span class="text-slate-500 text-[11px]">Rendered Frame</span>
+          <div class="flex items-center gap-3 text-[11px] shrink-0 font-cyber text-cyan-400">
+            <span>RES: 1920x1080</span>
+            <span class="text-slate-600">|</span>
+            <span>FPS: 60</span>
+          </div>
         </div>
 
-        <div class="p-6 bg-surface-950 min-h-[300px] flex items-center justify-center">
-          <div id="screen-container" class="w-full panel p-6 rounded border border-line">
-            <div class="flex items-center justify-between pb-3 border-b border-line mb-4">
-              <span id="screen-title" class="font-semibold text-white text-sm">Production Database Administration</span>
-              <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-850 border border-line text-slate-400" id="screen-price">CLUSTER ADMIN</span>
+        <!-- Simulated Target Screen Container -->
+        <div class="p-6 bg-dark-970 min-h-[340px] flex items-center justify-center relative select-none">
+          
+          <!-- Tactical Corner Reticles -->
+          <div class="hud-bracket hud-tl"></div>
+          <div class="hud-bracket hud-tr"></div>
+          <div class="hud-bracket hud-bl"></div>
+          <div class="hud-bracket hud-br"></div>
+
+          <div id="screen-container" class="w-full bg-dark-900/90 border border-slate-800 p-6 rounded-xl relative shadow-inner">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
+              <span id="screen-title" class="font-cyber font-bold text-white text-sm">PostgreSQL Cluster Administration</span>
+              <span class="text-[10px] font-mono px-2.5 py-0.5 rounded bg-dark-800 border border-slate-700 text-slate-300" id="screen-price">CLUSTER ADMIN</span>
             </div>
             
-            <p id="screen-desc" class="text-xs text-slate-400 mb-6 leading-relaxed">
+            <p id="screen-desc" class="text-xs text-slate-400 mb-6 leading-relaxed font-sans">
               Target database cluster: <b>prod-db-01</b> (14 TB Data, 8 PostgreSQL nodes).
             </p>
 
-            <div class="p-3.5 rounded bg-surface-900 border border-line text-xs text-slate-300 mb-6 flex justify-between items-center">
+            <div class="p-3.5 rounded-lg bg-dark-950 border border-slate-800 text-xs text-slate-300 mb-6 flex justify-between items-center font-mono">
               <div>
-                <div class="font-medium text-white" id="screen-item">Cluster: prod-db-01</div>
-                <div class="text-[11px] text-slate-500 mt-0.5">Region: us-east-1a • Status: Active</div>
+                <div class="font-semibold text-white" id="screen-item">Cluster: prod-db-01</div>
+                <div class="text-[11px] text-slate-500 mt-0.5">Region: us-east-1a • Status: Active Production</div>
               </div>
-              <span class="text-[11px] font-mono text-rose-400">Irreversible Action</span>
+              <span class="text-[11px] text-danger-400 font-bold uppercase tracking-wider">Irreversible Action</span>
             </div>
 
-            <!-- Intercepted Target Action Button -->
+            <!-- Intercepted Target Action Button with Crosshairs Bounding Box -->
             <div class="flex justify-end relative">
-              <div id="grounding-bbox" class="absolute -inset-1.5 border-2 border-dashed border-rose-500 rounded pointer-events-none flex items-start justify-end">
-                <span id="bbox-label" class="bg-rose-600 text-white text-[9px] font-mono px-1.5 py-0.5 rounded -mt-2 -mr-1">TARGET (98.7%)</span>
+              <div id="grounding-bbox" class="absolute -inset-2 border-2 border-dashed border-danger-500 rounded-lg pointer-events-none flex items-start justify-end transition-all">
+                <span id="bbox-label" class="bg-danger-500 text-white text-[9px] font-mono font-bold px-1.5 py-0.5 rounded -mt-2.5 -mr-1 flex items-center gap-1 shadow-lg">
+                  <i data-lucide="crosshair" class="w-3 h-3"></i> RETICLE [X: 840, Y: 520] (98.7%)
+                </span>
               </div>
-              <button id="screen-action-btn" class="px-4 py-2 rounded bg-rose-600 text-white font-medium text-xs shadow-sm pointer-events-none">
+              <button id="screen-action-btn" class="px-5 py-2.5 rounded-lg bg-danger-600 hover:bg-danger-500 text-white font-cyber font-bold text-xs shadow-lg pointer-events-none transition-all">
                 Drop Database &amp; Wipe All Volumes
               </button>
             </div>
           </div>
 
-          <canvas id="custom-canvas" class="hidden max-h-[320px] max-w-full rounded border border-line"></canvas>
+          <!-- Canvas for Custom Uploaded Image -->
+          <canvas id="custom-canvas" class="hidden max-h-[340px] max-w-full rounded-lg border border-slate-800 shadow-xl"></canvas>
         </div>
 
-        <div class="px-4 py-2.5 bg-surface-900 border-t border-line flex items-center justify-between text-xs text-slate-400 font-mono">
-          <label class="flex items-center gap-2 cursor-pointer select-none">
-            <input type="checkbox" id="toggle-bbox" checked onchange="toggleBBox()" class="rounded bg-surface-800 border-line text-blue-500">
-            <span>Visual Bounding Box</span>
-          </label>
-          <button onclick="testActionClick()" class="px-3 py-1.5 rounded bg-white hover:bg-slate-200 text-slate-950 font-medium text-xs transition-colors flex items-center gap-1.5 font-sans">
-            <i data-lucide="play" class="w-3.5 h-3.5"></i> Test Event Dispatch
+        <!-- Viewport Bottom HUD Controls -->
+        <div class="px-4 py-3 bg-dark-900 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+          <div class="flex items-center gap-4">
+            <label class="flex items-center gap-2 cursor-pointer select-none text-slate-300 hover:text-white">
+              <input type="checkbox" id="toggle-bbox" checked onchange="toggleBBox()" class="rounded bg-dark-800 border-slate-700 text-cyan-400 focus:ring-0">
+              <span>Grounding Reticle</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer select-none text-slate-300 hover:text-white">
+              <input type="checkbox" id="toggle-heatmap" checked onchange="toggleHeatmap()" class="rounded bg-dark-800 border-slate-700 text-cyan-400 focus:ring-0">
+              <span>Attention Scan</span>
+            </label>
+          </div>
+
+          <!-- The "Simulate Agent Click" Interactive Button -->
+          <button onclick="simulateAgentClick()" class="px-5 py-2 rounded-lg bg-gradient-to-r from-danger-500 to-rose-600 hover:from-danger-600 hover:to-rose-700 text-white font-cyber font-bold text-xs flex items-center gap-2 glow-red transition-all hover:scale-105 active:scale-95 shadow-xl">
+            <i data-lucide="zap" class="w-3.5 h-3.5 text-yellow-300"></i>
+            SIMULATE AGENT CLICK
           </button>
         </div>
+
       </div>
 
-      <!-- Telemetry Output Panel -->
+      <!-- Right: Real-Time Telemetry & Diagnostic Console -->
       <div class="lg:col-span-5 space-y-4">
         
-        <!-- Primary Verdict Card -->
-        <div id="verdict-box" class="panel p-5 rounded-lg border border-rose-500/30 bg-rose-950/10">
+        <!-- Primary Verdict Panel -->
+        <div id="verdict-box" class="bg-dark-950 p-6 rounded-2xl border border-danger-500/40 glow-red relative overflow-hidden transition-all">
           <div class="flex items-center justify-between mb-3">
-            <span class="text-xs font-mono uppercase text-slate-400">Classifier Verdict</span>
-            <span id="verdict-badge" class="px-2 py-0.5 rounded text-xs font-mono font-bold bg-rose-600 text-white">HARD_BLOCK</span>
+            <span class="text-xs font-cyber uppercase tracking-wider text-slate-400">CLASSIFIER VERDICT</span>
+            <span id="verdict-badge" class="px-2.5 py-0.5 rounded font-cyber text-xs font-bold bg-danger-500 text-white shadow-md">HARD_BLOCK</span>
           </div>
 
-          <div class="flex items-baseline gap-2 mb-1">
-            <span id="risk-score" class="text-4xl font-extrabold text-rose-400 font-mono">98.7%</span>
-            <span class="text-xs text-slate-400 font-mono">Calculated Risk Score</span>
+          <div class="flex items-baseline gap-3 mb-2">
+            <span id="risk-score" class="text-5xl font-black text-danger-400 font-cyber">98.7%</span>
+            <span class="text-xs text-slate-400 font-mono">Visual Risk Confidence</span>
           </div>
 
-          <div class="w-full bg-surface-900 rounded-full h-1.5 mb-3 overflow-hidden border border-line">
-            <div id="risk-bar" class="h-1.5 rounded-full bg-rose-500" style="width: 98.7%;"></div>
+          <!-- Dynamic Confidence Bar -->
+          <div class="w-full bg-dark-900 rounded-full h-2 mb-4 overflow-hidden border border-slate-800">
+            <div id="risk-bar" class="h-2 rounded-full bg-gradient-to-r from-amber-500 to-danger-500 transition-all duration-500" style="width: 98.7%;"></div>
           </div>
 
-          <div class="text-xs font-mono text-slate-300 mb-2" id="risk-category">
-            Policy Match: <span class="text-rose-400 font-semibold">DESTRUCTIVE_CLOUD_INFRASTRUCTURE</span>
+          <div class="text-xs font-mono text-slate-300 mb-3" id="risk-category">
+            Threat Signature: <span class="text-danger-400 font-bold">DESTRUCTIVE_CLOUD_INFRASTRUCTURE</span>
           </div>
 
-          <p id="reasoning-text" class="text-xs text-slate-400 leading-relaxed bg-surface-950/70 p-3 rounded border border-line font-mono text-[11px]">
+          <p id="reasoning-text" class="text-xs text-slate-400 leading-relaxed bg-dark-900/90 p-3 rounded-lg border border-slate-800 font-mono text-[11px]">
             <b>Diagnostic:</b> Irreversible database deletion confirmation dialog detected. Bounding box coordinates isolated. Signal SIGSTOP dispatched to agent.
           </p>
         </div>
 
-        <!-- Policy Threshold Calibration Slider -->
-        <div class="panel p-4 rounded-lg border border-line text-xs font-mono">
-          <div class="flex justify-between items-center mb-2">
-            <span class="text-slate-400">Interception Threshold:</span>
-            <span id="threshold-val" class="text-white font-bold">0.50</span>
+        <!-- Threshold Calibration Slider -->
+        <div class="bg-dark-950 p-5 rounded-2xl border border-slate-800 font-mono text-xs space-y-2">
+          <div class="flex justify-between items-center">
+            <span class="text-slate-400 flex items-center gap-1.5">
+              <i data-lucide="sliders" class="w-3.5 h-3.5 text-cyan-400"></i> Policy Interception Threshold:
+            </span>
+            <span id="threshold-val" class="text-cyan-400 font-bold font-cyber text-sm">0.50</span>
           </div>
-          <input type="range" id="threshold-slider" min="0.05" max="0.95" step="0.05" value="0.50" oninput="updateThreshold(this.value)" class="w-full accent-emerald-500 cursor-pointer">
-          <div class="flex justify-between text-[10px] text-slate-500 mt-1">
-            <span>0.05 (Aggressive)</span>
-            <span>0.50 (Default)</span>
+          <input type="range" id="threshold-slider" min="0.05" max="0.95" step="0.05" value="0.50" oninput="updateThreshold(this.value)" class="w-full accent-cyan-400 cursor-pointer">
+          <div class="flex justify-between text-[10px] text-slate-500">
+            <span>0.05 (Aggressive Shield)</span>
+            <span>0.50 (Balanced Policy)</span>
             <span>0.95 (Permissive)</span>
           </div>
         </div>
 
-        <!-- Event Telemetry Metadata -->
-        <div class="panel p-4 rounded-lg border border-line font-mono text-xs space-y-1.5">
-          <div class="text-[10px] text-slate-500 uppercase font-semibold mb-2">Event Inspector Metadata</div>
+        <!-- Live Metadata Readout -->
+        <div class="bg-dark-950 p-5 rounded-2xl border border-slate-800 font-mono text-xs space-y-2">
+          <div class="text-[10px] text-slate-500 uppercase font-cyber font-bold mb-2">Live Hardware Reticle Telemetry</div>
           <div class="flex justify-between text-slate-400">
-            <span>Event Type:</span>
+            <span>Dispatched Action:</span>
             <span id="tele-action" class="text-slate-200">mouse_click</span>
           </div>
           <div class="flex justify-between text-slate-400">
-            <span>DOM / UI Selector:</span>
-            <span id="tele-selector" class="text-slate-200 truncate max-w-[180px]">button#btn-destroy-cluster</span>
+            <span>Target Selector:</span>
+            <span id="tele-selector" class="text-slate-200 truncate max-w-[190px]">button#btn-destroy-cluster</span>
           </div>
           <div class="flex justify-between text-slate-400">
-            <span>Norm Coordinates:</span>
-            <span id="tele-bbox" class="text-slate-200">[0.65, 0.70, 0.96, 0.88]</span>
+            <span>Normalized BBox:</span>
+            <span id="tele-bbox" class="text-slate-200 font-mono text-[11px]">[0.65, 0.70, 0.96, 0.88]</span>
           </div>
-          <div class="flex justify-between text-slate-400 pt-1.5 border-t border-line">
+          <div class="flex justify-between text-slate-400 pt-2 border-t border-slate-800">
             <span>Circuit Breaker State:</span>
-            <span id="tele-cb" class="text-rose-400 font-semibold">SIGSTOP Dispatched (Event Dropped)</span>
+            <span id="tele-cb" class="text-danger-400 font-bold">ABORTED (SIGSTOP DISPATCHED)</span>
           </div>
         </div>
 
@@ -434,366 +544,557 @@
     </div>
   </section>
 
-  <!-- Live Host Process Discovery -->
-  <section id="active-agents" class="py-16 px-4 max-w-6xl mx-auto border-b border-line">
-    <div class="flex flex-col sm:flex-row sm:items-end justify-between mb-8 gap-4">
+  <!-- 2. Autonomous Threat Radar (360° Sonar Scanner) 📡 -->
+  <section id="radar" class="relative z-10 py-16 px-4 max-w-7xl mx-auto border-t border-slate-800/80">
+    <div class="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
       <div>
-        <div class="text-xs font-mono text-emerald-400 uppercase tracking-wider mb-1">Live Host Telemetry</div>
-        <h2 class="text-2xl font-bold text-white tracking-tight">Autonomous agents active on your machine</h2>
-        <p class="text-slate-400 mt-1 text-xs">Real-time scan of local processes executing with agentic or headless automation capabilities.</p>
+        <div class="text-xs font-cyber text-cyan-400 uppercase tracking-widest flex items-center gap-1.5 mb-1">
+          <i data-lucide="radar" class="w-3.5 h-3.5 text-cyan-400"></i> Autonomous Threat Radar (360° Sonar)
+        </div>
+        <h2 class="text-3xl font-cyber font-bold text-white tracking-tight">Active Host Agent Scanner</h2>
+        <p class="text-slate-400 text-xs font-sans mt-1">Autonomous computer-use agent processes discovered and monitored in real-time across your local machine.</p>
       </div>
 
-      <div class="flex items-center gap-3">
-        <input type="text" id="agent-filter-input" placeholder="Filter processes..." oninput="filterAgents(this.value)" class="panel px-3 py-1.5 rounded text-xs text-slate-200 placeholder-slate-500 border border-line focus:outline-none focus:border-slate-500">
-        <button onclick="fetchLiveAgents()" class="px-3.5 py-1.5 rounded panel hover:bg-surface-850 text-slate-200 text-xs font-medium flex items-center gap-1.5 border border-line transition-colors">
-          <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-slate-400"></i> Refresh
-        </button>
-      </div>
-    </div>
-
-    <div class="panel rounded-lg overflow-hidden border border-line">
-      <div class="overflow-x-auto">
-        <table class="w-full text-left text-xs font-mono">
-          <thead class="bg-surface-900 border-b border-line text-slate-400 uppercase text-[10px]">
-            <tr>
-              <th class="py-3 px-4 font-semibold">Agent Process</th>
-              <th class="py-3 px-4 font-semibold">PID</th>
-              <th class="py-3 px-4 font-semibold">Classification</th>
-              <th class="py-3 px-4 font-semibold">Executable Path</th>
-              <th class="py-3 px-4 font-semibold">Privilege Level</th>
-              <th class="py-3 px-4 font-semibold">OpticWall Status</th>
-            </tr>
-          </thead>
-          <tbody id="agent-table-body" class="divide-y divide-line text-slate-300">
-            <tr>
-              <td class="py-3 px-4 font-sans font-medium text-white flex items-center gap-2">
-                <i data-lucide="terminal" class="w-3.5 h-3.5 text-blue-400"></i> Claude Code
-              </td>
-              <td class="py-3 px-4">25460</td>
-              <td class="py-3 px-4 text-slate-400">CLI Coding Agent</td>
-              <td class="py-3 px-4 text-slate-400 truncate max-w-xs">npm/claude.exe</td>
-              <td class="py-3 px-4 text-rose-400 font-semibold">High (OS Shell)</td>
-              <td class="py-3 px-4">
-                <span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px]">ATTACHED</span>
-              </td>
-            </tr>
-            <tr>
-              <td class="py-3 px-4 font-sans font-medium text-white flex items-center gap-2">
-                <i data-lucide="sparkles" class="w-3.5 h-3.5 text-purple-400"></i> Antigravity Agent
-              </td>
-              <td class="py-3 px-4">1544</td>
-              <td class="py-3 px-4 text-slate-400">IDE Agent</td>
-              <td class="py-3 px-4 text-slate-400 truncate max-w-xs">agy.exe</td>
-              <td class="py-3 px-4 text-rose-400 font-semibold">High (OS Shell)</td>
-              <td class="py-3 px-4">
-                <span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px]">ATTACHED</span>
-              </td>
-            </tr>
-            <tr>
-              <td class="py-3 px-4 font-sans font-medium text-white flex items-center gap-2">
-                <i data-lucide="globe" class="w-3.5 h-3.5 text-amber-400"></i> Playwright / Browser-Use
-              </td>
-              <td class="py-3 px-4">1428</td>
-              <td class="py-3 px-4 text-slate-400">Browser Automation</td>
-              <td class="py-3 px-4 text-slate-400 truncate max-w-xs">playwright-mcp</td>
-              <td class="py-3 px-4 text-rose-400 font-semibold">High (Browser CDP)</td>
-              <td class="py-3 px-4">
-                <span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px]">ATTACHED</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </section>
-
-  <!-- Installation, Downloads & Integrations -->
-  <section id="install" class="py-16 px-4 max-w-6xl mx-auto border-b border-line">
-    <div class="max-w-2xl mb-8">
-      <div class="text-xs font-mono text-emerald-400 uppercase tracking-wider mb-1">Deployment &amp; Packaging</div>
-      <h2 class="text-2xl font-bold text-white tracking-tight">Installation &amp; Integration Hub</h2>
-      <p class="text-slate-400 mt-1 text-xs">Deploy OpticWall as a background OS daemon, an MCP plugin, a Chrome extension, or a standalone Python wrapper.</p>
-    </div>
-
-    <!-- Navigation Tabs -->
-    <div class="flex items-center gap-2 border-b border-line mb-8 overflow-x-auto">
-      <button onclick="setTab('cli')" id="tab-cli" class="install-tab px-4 py-2 text-xs font-mono font-medium border-b-2 border-white text-white">
-        1. CLI &amp; Python Package
-      </button>
-      <button onclick="setTab('mcp')" id="tab-mcp" class="install-tab px-4 py-2 text-xs font-mono font-medium border-b-2 border-transparent text-slate-400 hover:text-white">
-        2. MCP Server (Claude / Cursor)
-      </button>
-      <button onclick="setTab('extension')" id="tab-extension" class="install-tab px-4 py-2 text-xs font-mono font-medium border-b-2 border-transparent text-slate-400 hover:text-white">
-        3. Browser Extension (MV3)
-      </button>
-      <button onclick="setTab('desktop')" id="tab-desktop" class="install-tab px-4 py-2 text-xs font-mono font-medium border-b-2 border-transparent text-slate-400 hover:text-white">
-        4. OS Daemons (Win / Mac / Linux)
+      <button onclick="triggerRadarScan()" class="px-4 py-2 rounded-xl bg-dark-900 hover:bg-dark-850 text-cyan-400 border border-cyan-500/40 glow-cyan text-xs font-cyber font-bold flex items-center gap-2 transition-all hover:scale-105 active:scale-95">
+        <i data-lucide="refresh-cw" id="radar-refresh-icon" class="w-4 h-4"></i>
+        <span>INITIATE HOST SCAN</span>
       </button>
     </div>
 
-    <!-- Tab 1: CLI -->
-    <div id="content-cli" class="tab-content space-y-6">
-      <div class="panel p-6 rounded-lg border border-line">
-        <h3 class="font-semibold text-white text-sm mb-2">Install via PyPI</h3>
-        <p class="text-xs text-slate-400 mb-4">Compatible with Python 3.10 through 3.12. Includes ONNX Runtime, DXGI/Quartz capture, and MCP server.</p>
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+      
+      <!-- Left: Animated 360-Degree Radar Sonar Display -->
+      <div class="lg:col-span-5 flex flex-col items-center justify-center p-6 bg-dark-950 rounded-2xl border border-slate-800 relative overflow-hidden">
         
-        <div class="bg-surface-950 p-4 rounded border border-line font-mono text-xs text-slate-300 space-y-2">
-          <div class="flex items-center justify-between">
-            <span class="text-emerald-400">pip install opticwall</span>
-            <button onclick="copySnippet('pip install opticwall')" class="text-slate-500 hover:text-white"><i data-lucide="copy" class="w-4 h-4"></i></button>
+        <div class="relative w-64 h-64 sm:w-80 sm:h-80 rounded-full border border-cyan-500/30 flex items-center justify-center bg-dark-970 shadow-2xl">
+          
+          <!-- Concentric Radar Range Rings -->
+          <div class="absolute w-3/4 h-3/4 rounded-full border border-cyan-500/20"></div>
+          <div class="absolute w-1/2 h-1/2 rounded-full border border-cyan-500/20"></div>
+          <div class="absolute w-1/4 h-1/4 rounded-full border border-cyan-500/25"></div>
+          
+          <!-- Axis Crosshairs -->
+          <div class="absolute inset-x-0 top-1/2 h-px bg-cyan-500/20"></div>
+          <div class="absolute inset-y-0 left-1/2 w-px bg-cyan-500/20"></div>
+
+          <!-- Rotating Sonar Beam Sweep -->
+          <div class="absolute inset-0 rounded-full animate-radar pointer-events-none" style="background: conic-gradient(from 0deg, rgba(0, 240, 255, 0.4) 0deg, transparent 65deg, transparent 360deg);"></div>
+
+          <!-- Plotted Agent Blips on Radar Screen -->
+          <div class="absolute top-1/4 left-1/3 w-3 h-3 rounded-full bg-danger-500 glow-red animate-ping" title="Claude Code (PID 25460)"></div>
+          <div class="absolute top-1/4 left-1/3 w-2.5 h-2.5 rounded-full bg-danger-400"></div>
+
+          <div class="absolute bottom-1/3 right-1/4 w-3 h-3 rounded-full bg-purple-500 animate-pulse" title="Antigravity Agent (PID 1544)"></div>
+          <div class="absolute bottom-1/3 right-1/4 w-2 h-2 rounded-full bg-purple-400"></div>
+
+          <div class="absolute top-1/3 right-1/3 w-3 h-3 rounded-full bg-amber-500 animate-ping" title="Playwright / Browser-Use"></div>
+          <div class="absolute top-1/3 right-1/3 w-2 h-2 rounded-full bg-amber-400"></div>
+
+          <div class="absolute bottom-1/4 left-1/4 w-2.5 h-2.5 rounded-full bg-cyan-400" title="Cursor IDE / Windsurf"></div>
+
+          <!-- Radar Center Reticle -->
+          <div class="w-4 h-4 rounded-full bg-cyan-400 border-2 border-white glow-cyan z-10 flex items-center justify-center">
+            <span class="w-1.5 h-1.5 rounded-full bg-dark-950"></span>
           </div>
-          <div class="text-slate-500"># Start background watcher daemon</div>
-          <div class="flex items-center justify-between">
-            <span class="text-emerald-400">opticwall watch --threshold 0.50</span>
-            <button onclick="copySnippet('opticwall watch --threshold 0.50')" class="text-slate-500 hover:text-white"><i data-lucide="copy" class="w-4 h-4"></i></button>
+
+          <div class="absolute bottom-3 text-[10px] font-mono text-cyan-400/80 uppercase tracking-widest">
+            RADAR: 360° SWEEP ACTIVE
           </div>
         </div>
 
-        <div class="mt-4 flex items-center gap-3">
-          <a href="/api/download/python-sdk" download class="px-3.5 py-1.5 rounded bg-surface-850 hover:bg-surface-800 text-slate-200 text-xs font-medium border border-line flex items-center gap-1.5 transition-colors">
-            <i data-lucide="download" class="w-3.5 h-3.5"></i> Download opticwall_sdk.py (Drop-in Client)
-          </a>
-        </div>
-      </div>
-    </div>
-
-    <!-- Tab 2: MCP Config -->
-    <div id="content-mcp" class="tab-content hidden space-y-6">
-      <div class="panel p-6 rounded-lg border border-line">
-        <h3 class="font-semibold text-white text-sm mb-2">Universal Model Context Protocol (MCP) Configuration</h3>
-        <p class="text-xs text-slate-400 mb-4">Add OpticWall as an MCP tool for Claude Desktop, Claude Code, Cursor, Windsurf, and OpenAI Operator.</p>
-
-        <div class="bg-surface-950 p-4 rounded border border-line font-mono text-xs text-slate-300 relative">
-          <button onclick="copySnippet('{\n  &quot;mcpServers&quot;: {\n    &quot;opticwall&quot;: {\n      &quot;command&quot;: &quot;python&quot;,\n      &quot;args&quot;: [&quot;-m&quot;, &quot;src.security_wall.mcp_server&quot;]\n    }\n  }\n}')" class="absolute top-4 right-4 text-slate-500 hover:text-white"><i data-lucide="copy" class="w-4 h-4"></i></button>
-          <pre class="overflow-x-auto text-slate-300">{
-  "mcpServers": {
-    "opticwall": {
-      "command": "python",
-      "args": ["-m", "src.security_wall.mcp_server"]
-    }
-  }
-}</pre>
-        </div>
-
-        <div class="mt-4 flex items-center gap-3">
-          <a href="/api/download/mcp-config" download class="px-3.5 py-1.5 rounded bg-white hover:bg-slate-200 text-slate-950 font-semibold text-xs flex items-center gap-1.5 transition-colors">
-            <i data-lucide="download" class="w-3.5 h-3.5"></i> Download MCP Config Bundle (.zip)
-          </a>
+        <div class="mt-4 text-xs font-mono text-slate-400 text-center">
+          <span class="text-cyan-400 font-bold" id="radar-agent-count">19 Active Agents</span> Detected on Host Machine
         </div>
       </div>
-    </div>
 
-    <!-- Tab 3: Browser Extension -->
-    <div id="content-extension" class="tab-content hidden space-y-6">
-      <div class="panel p-6 rounded-lg border border-line">
-        <h3 class="font-semibold text-white text-sm mb-2">Chrome &amp; Edge Browser Extension (Manifest V3)</h3>
-        <p class="text-xs text-slate-400 mb-4">Intercepts DOM clicks executed by Playwright, Browser-Use, or Puppeteer before form submissions or payments fire.</p>
-
-        <ol class="list-decimal list-inside text-xs text-slate-300 space-y-2 mb-4 font-mono">
-          <li>Download the extension zip bundle using the button below.</li>
-          <li>Extract the archive into a local folder on your computer.</li>
-          <li>Navigate to <span class="text-emerald-400">chrome://extensions/</span> in Chrome, Edge, or Brave.</li>
-          <li>Enable <b>Developer mode</b> (toggle in top right corner).</li>
-          <li>Click <b>Load unpacked</b> and select the extracted folder.</li>
-        </ol>
-
-        <div class="flex items-center gap-3">
-          <a href="/api/download/browser-extension" download class="px-3.5 py-1.5 rounded bg-white hover:bg-slate-200 text-slate-950 font-semibold text-xs flex items-center gap-1.5 transition-colors">
-            <i data-lucide="download" class="w-3.5 h-3.5"></i> Download Extension Bundle (.zip)
-          </a>
-        </div>
-      </div>
-    </div>
-
-    <!-- Tab 4: Desktop Installers -->
-    <div id="content-desktop" class="tab-content hidden space-y-6">
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
-        
-        <!-- Windows -->
-        <div class="panel p-5 rounded-lg border border-line flex flex-col justify-between">
-          <div>
-            <h4 class="font-semibold text-white text-sm">Windows Setup</h4>
-            <p class="text-[11px] text-slate-400 mt-1 font-mono">Windows 10 / 11 (x64)</p>
-            <p class="text-xs text-slate-400 mt-3 leading-relaxed">
-              Batch installer script. Verifies Python runtime, registers local service, and configures DXGI desktop duplication.
-            </p>
-          </div>
-          <div class="mt-6 pt-4 border-t border-line">
-            <a href="/api/download/windows" download class="w-full py-2 rounded bg-white hover:bg-slate-200 text-slate-950 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors">
-              <i data-lucide="download" class="w-3.5 h-3.5"></i> Download Script (.bat)
-            </a>
-          </div>
+      <!-- Right: Real Host Process Oversight Matrix Table -->
+      <div id="agents" class="lg:col-span-7 bg-dark-950 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl">
+        <div class="px-5 py-3.5 bg-dark-900 border-b border-slate-800 flex items-center justify-between">
+          <span class="font-cyber text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+            <i data-lucide="cpu" class="w-4 h-4 text-cyan-400"></i> Host Process Oversight Matrix
+          </span>
+          <span class="text-[10px] font-mono px-2.5 py-0.5 rounded bg-matrix-500/20 text-matrix-400 border border-matrix-500/30">
+            LIVE SYNCED
+          </span>
         </div>
 
-        <!-- macOS -->
-        <div class="panel p-5 rounded-lg border border-line flex flex-col justify-between">
-          <div>
-            <h4 class="font-semibold text-white text-sm">macOS Setup</h4>
-            <p class="text-[11px] text-slate-400 mt-1 font-mono">Apple Silicon &amp; Intel</p>
-            <p class="text-xs text-slate-400 mt-3 leading-relaxed">
-              Shell script. Requests Screen Recording permissions, attaches to Claude Desktop MCP, and launches daemon.
-            </p>
-          </div>
-          <div class="mt-6 pt-4 border-t border-line">
-            <a href="/api/download/mac" download class="w-full py-2 rounded bg-surface-850 hover:bg-surface-800 text-slate-200 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors border border-line">
-              <i data-lucide="download" class="w-3.5 h-3.5"></i> Download Script (.sh)
-            </a>
-          </div>
-        </div>
-
-        <!-- Linux -->
-        <div class="panel p-5 rounded-lg border border-line flex flex-col justify-between">
-          <div>
-            <h4 class="font-semibold text-white text-sm">Linux / Headless</h4>
-            <p class="text-[11px] text-slate-400 mt-1 font-mono">Ubuntu, Debian, Arch, Docker</p>
-            <p class="text-xs text-slate-400 mt-3 leading-relaxed">
-              Standard bash installer. Compatible with X11, Wayland, and virtual headless Xvfb servers in CI/CD pipelines.
-            </p>
-          </div>
-          <div class="mt-6 pt-4 border-t border-line">
-            <a href="/api/download/linux" download class="w-full py-2 rounded bg-surface-850 hover:bg-surface-800 text-slate-200 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors border border-line">
-              <i data-lucide="download" class="w-3.5 h-3.5"></i> Download Script (.sh)
-            </a>
-          </div>
+        <div class="overflow-x-auto max-h-[380px]">
+          <table class="w-full text-left text-xs font-mono">
+            <thead class="bg-dark-900/60 border-b border-slate-800 text-slate-400 uppercase text-[10px] sticky top-0">
+              <tr>
+                <th class="py-3 px-4">Agent Name</th>
+                <th class="py-3 px-4">PID</th>
+                <th class="py-3 px-4">Category</th>
+                <th class="py-3 px-4">Executable</th>
+                <th class="py-3 px-4">Privilege</th>
+                <th class="py-3 px-4">Status</th>
+              </tr>
+            </thead>
+            <tbody id="agent-table-body" class="divide-y divide-slate-800/60 text-slate-300">
+              <tr>
+                <td class="py-3 px-4 font-sans font-semibold text-white flex items-center gap-2">
+                  <i data-lucide="terminal" class="w-3.5 h-3.5 text-cyan-400"></i> Claude Code
+                </td>
+                <td class="py-3 px-4">25460</td>
+                <td class="py-3 px-4 text-slate-400">CLI Agent</td>
+                <td class="py-3 px-4 text-slate-400 truncate max-w-[130px]">npm/claude.exe</td>
+                <td class="py-3 px-4 text-danger-400 font-bold">OS Execution</td>
+                <td class="py-3 px-4">
+                  <span class="px-2 py-0.5 rounded bg-matrix-500/10 text-matrix-400 border border-matrix-500/30 text-[10px] font-bold">ATTACHED</span>
+                </td>
+              </tr>
+              <tr>
+                <td class="py-3 px-4 font-sans font-semibold text-white flex items-center gap-2">
+                  <i data-lucide="sparkles" class="w-3.5 h-3.5 text-purple-400"></i> Antigravity Agent
+                </td>
+                <td class="py-3 px-4">1544</td>
+                <td class="py-3 px-4 text-slate-400">IDE Agent</td>
+                <td class="py-3 px-4 text-slate-400 truncate max-w-[130px]">agy.exe</td>
+                <td class="py-3 px-4 text-danger-400 font-bold">OS Execution</td>
+                <td class="py-3 px-4">
+                  <span class="px-2 py-0.5 rounded bg-matrix-500/10 text-matrix-400 border border-matrix-500/30 text-[10px] font-bold">ATTACHED</span>
+                </td>
+              </tr>
+              <tr>
+                <td class="py-3 px-4 font-sans font-semibold text-white flex items-center gap-2">
+                  <i data-lucide="globe" class="w-3.5 h-3.5 text-amber-400"></i> Playwright / Browser-Use
+                </td>
+                <td class="py-3 px-4">1428</td>
+                <td class="py-3 px-4 text-slate-400">Browser Bot</td>
+                <td class="py-3 px-4 text-slate-400 truncate max-w-[130px]">playwright-mcp</td>
+                <td class="py-3 px-4 text-danger-400 font-bold">Browser CDP</td>
+                <td class="py-3 px-4">
+                  <span class="px-2 py-0.5 rounded bg-matrix-500/10 text-matrix-400 border border-matrix-500/30 text-[10px] font-bold">ATTACHED</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
       </div>
+
     </div>
   </section>
 
-  <!-- Technical Benchmarks Table -->
-  <section class="py-16 px-4 max-w-6xl mx-auto border-b border-line">
-    <div class="max-w-2xl mb-8">
-      <div class="text-xs font-mono text-emerald-400 uppercase tracking-wider mb-1">Performance Benchmarks</div>
-      <h2 class="text-2xl font-bold text-white tracking-tight">Latency budget and resource profile</h2>
-      <p class="text-slate-400 mt-1 text-xs">Evaluated on an Intel Core i7-12700H and Apple M2 (4 CPU worker threads, FP32 and INT8 ONNX).</p>
+  <!-- 7. 6-Card Global Release Matrix 📦 -->
+  <section id="matrix" class="relative z-10 py-16 px-4 max-w-7xl mx-auto border-t border-slate-800/80">
+    <div class="max-w-3xl mb-10">
+      <div class="text-xs font-cyber text-cyan-400 uppercase tracking-widest flex items-center gap-1.5 mb-1">
+        <i data-lucide="package" class="w-3.5 h-3.5 text-cyan-400"></i> Global Distribution &amp; Integrations
+      </div>
+      <h2 class="text-3xl font-cyber font-bold text-white tracking-tight">6-Card Global Release Matrix</h2>
+      <p class="text-slate-400 text-xs font-sans mt-1">Download production-ready installers, universal MCP bundles, browser extensions, and standalone screen guards.</p>
     </div>
 
-    <div class="panel rounded-lg overflow-hidden border border-line">
-      <table class="w-full text-left text-xs font-mono">
-        <thead class="bg-surface-900 border-b border-line text-slate-400 uppercase text-[10px]">
-          <tr>
-            <th class="py-3 px-4">Pipeline Stage</th>
-            <th class="py-3 px-4">Mechanism</th>
-            <th class="py-3 px-4">Latency (P50)</th>
-            <th class="py-3 px-4">Latency (P99)</th>
-            <th class="py-3 px-4">Memory Overhead</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-line text-slate-300">
-          <tr>
-            <td class="py-3 px-4 font-sans font-medium text-white">Framebuffer Capture</td>
-            <td class="py-3 px-4 text-slate-400">DXGI Desktop Duplication / ScreenCaptureKit</td>
-            <td class="py-3 px-4 text-emerald-400">9.2 ms</td>
-            <td class="py-3 px-4 text-slate-400">14.1 ms</td>
-            <td class="py-3 px-4 text-slate-400">8 MB (buffer)</td>
-          </tr>
-          <tr>
-            <td class="py-3 px-4 font-sans font-medium text-white">Vision Inference (ViT-Patch)</td>
-            <td class="py-3 px-4 text-slate-400">ONNX Runtime (INT8, 4 CPU threads)</td>
-            <td class="py-3 px-4 text-emerald-400">128.4 ms</td>
-            <td class="py-3 px-4 text-slate-400">152.0 ms</td>
-            <td class="py-3 px-4 text-slate-400">86 MB (weights)</td>
-          </tr>
-          <tr>
-            <td class="py-3 px-4 font-sans font-medium text-white">Policy Resolution</td>
-            <td class="py-3 px-4 text-slate-400">Local Rule Matcher &amp; Threshold Comparator</td>
-            <td class="py-3 px-4 text-emerald-400">0.4 ms</td>
-            <td class="py-3 px-4 text-slate-400">0.9 ms</td>
-            <td class="py-3 px-4 text-slate-400">&lt;1 MB</td>
-          </tr>
-          <tr class="bg-surface-950 font-semibold">
-            <td class="py-3 px-4 text-white">Total Roundtrip Overhead</td>
-            <td class="py-3 px-4 text-slate-400">End-to-End Interception Loop</td>
-            <td class="py-3 px-4 text-emerald-400">138.0 ms</td>
-            <td class="py-3 px-4 text-emerald-400">167.0 ms</td>
-            <td class="py-3 px-4 text-slate-300">~118 MB (Resident RSS)</td>
-          </tr>
-        </tbody>
-      </table>
+    <!-- 6 Release Cards Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      
+      <!-- Card 1: Windows 1-Click Guard -->
+      <div class="bg-dark-950 p-6 rounded-2xl border border-slate-800 hover:border-cyan-500/50 transition-all flex flex-col justify-between group shadow-xl">
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <span class="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-400/30 flex items-center justify-center text-blue-400">
+              <i data-lucide="monitor" class="w-4 h-4"></i>
+            </span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-dark-900 border border-slate-700 text-slate-300">.BAT SETUP</span>
+          </div>
+          <h3 class="font-cyber font-bold text-white text-base">Windows 1-Click Guard</h3>
+          <p class="text-xs text-slate-400 mt-1 font-mono">Windows 10 / 11 (x64)</p>
+          <p class="text-xs text-slate-300 mt-3 leading-relaxed font-sans">
+            Automated batch setup script. Verifies Python runtime, registers local service, configures DXGI desktop duplication, and starts background tray guard.
+          </p>
+        </div>
+        <div class="mt-6 pt-4 border-t border-slate-800">
+          <a href="/api/download/windows" download class="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-cyber font-bold text-xs flex items-center justify-center gap-2 glow-cyan transition-all hover:scale-102">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i> DOWNLOAD (.BAT)
+          </a>
+        </div>
+      </div>
+
+      <!-- Card 2: macOS Daemon -->
+      <div class="bg-dark-950 p-6 rounded-2xl border border-slate-800 hover:border-cyan-500/50 transition-all flex flex-col justify-between group shadow-xl">
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <span class="w-8 h-8 rounded-lg bg-slate-500/10 border border-slate-400/30 flex items-center justify-center text-slate-300">
+              <i data-lucide="apple" class="w-4 h-4"></i>
+            </span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-dark-900 border border-slate-700 text-slate-300">.SH SCRIPT</span>
+          </div>
+          <h3 class="font-cyber font-bold text-white text-base">macOS Daemon</h3>
+          <p class="text-xs text-slate-400 mt-1 font-mono">Apple Silicon &amp; Intel</p>
+          <p class="text-xs text-slate-300 mt-3 leading-relaxed font-sans">
+            Installs background menu bar daemon with native ScreenCaptureKit and CoreML acceleration support. Automatically links with Claude Desktop.
+          </p>
+        </div>
+        <div class="mt-6 pt-4 border-t border-slate-800">
+          <a href="/api/download/mac" download class="w-full py-2.5 rounded-xl bg-dark-900 hover:bg-dark-850 text-cyan-400 border border-cyan-500/40 font-cyber font-bold text-xs flex items-center justify-center gap-2 transition-all hover:scale-102">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i> DOWNLOAD (.SH)
+          </a>
+        </div>
+      </div>
+
+      <!-- Card 3: Linux / CI Service -->
+      <div class="bg-dark-950 p-6 rounded-2xl border border-slate-800 hover:border-cyan-500/50 transition-all flex flex-col justify-between group shadow-xl">
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <span class="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-400/30 flex items-center justify-center text-amber-400">
+              <i data-lucide="terminal" class="w-4 h-4"></i>
+            </span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-dark-900 border border-slate-700 text-slate-300">SYSTEMD SERVICE</span>
+          </div>
+          <h3 class="font-cyber font-bold text-white text-base">Linux / CI Service</h3>
+          <p class="text-xs text-slate-400 mt-1 font-mono">Ubuntu, Debian, Fedora, Docker</p>
+          <p class="text-xs text-slate-300 mt-3 leading-relaxed font-sans">
+            Headless daemon for CI/CD pipelines, Docker containers, and virtual display servers (X11 / Wayland / Xvfb). Includes systemd unit files.
+          </p>
+        </div>
+        <div class="mt-6 pt-4 border-t border-slate-800">
+          <a href="/api/download/linux" download class="w-full py-2.5 rounded-xl bg-dark-900 hover:bg-dark-850 text-cyan-400 border border-cyan-500/40 font-cyber font-bold text-xs flex items-center justify-center gap-2 transition-all hover:scale-102">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i> DOWNLOAD (.SH)
+          </a>
+        </div>
+      </div>
+
+      <!-- Card 4: Browser Extension (MV3) -->
+      <div class="bg-dark-950 p-6 rounded-2xl border border-slate-800 hover:border-cyan-500/50 transition-all flex flex-col justify-between group shadow-xl">
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <span class="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-400/30 flex items-center justify-center text-emerald-400">
+              <i data-lucide="puzzle" class="w-4 h-4"></i>
+            </span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-dark-900 border border-slate-700 text-slate-300">MANIFEST V3</span>
+          </div>
+          <h3 class="font-cyber font-bold text-white text-base">Chrome &amp; Edge Extension</h3>
+          <p class="text-xs text-slate-400 mt-1 font-mono">Chrome, Edge, Brave</p>
+          <p class="text-xs text-slate-300 mt-3 leading-relaxed font-sans">
+            Ready-to-unpack extension. Intercepts clicks on destructive web buttons and checkout forms initiated by Playwright, Browser-Use, or Puppeteer bots.
+          </p>
+        </div>
+        <div class="mt-6 pt-4 border-t border-slate-800">
+          <a href="/api/download/browser-extension" download class="w-full py-2.5 rounded-xl bg-dark-900 hover:bg-dark-850 text-cyan-400 border border-cyan-500/40 font-cyber font-bold text-xs flex items-center justify-center gap-2 transition-all hover:scale-102">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i> DOWNLOAD (.ZIP)
+          </a>
+        </div>
+      </div>
+
+      <!-- Card 5: Universal MCP Config Bundle -->
+      <div class="bg-dark-950 p-6 rounded-2xl border border-slate-800 hover:border-cyan-500/50 transition-all flex flex-col justify-between group shadow-xl">
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <span class="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-400/30 flex items-center justify-center text-purple-400">
+              <i data-lucide="cpu" class="w-4 h-4"></i>
+            </span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-dark-900 border border-slate-700 text-slate-300">MCP JSON BUNDLE</span>
+          </div>
+          <h3 class="font-cyber font-bold text-white text-base">Universal MCP Configs</h3>
+          <p class="text-xs text-slate-400 mt-1 font-mono">Claude Desktop, Cursor, OpenAI</p>
+          <p class="text-xs text-slate-300 mt-3 leading-relaxed font-sans">
+            Pre-configured stdio transport JSON files for Claude Desktop, Claude Code, Cursor IDE, Windsurf, and OpenAI Operator. Drop right into agent config.
+          </p>
+        </div>
+        <div class="mt-6 pt-4 border-t border-slate-800">
+          <a href="/api/download/mcp-config" download class="w-full py-2.5 rounded-xl bg-dark-900 hover:bg-dark-850 text-cyan-400 border border-cyan-500/40 font-cyber font-bold text-xs flex items-center justify-center gap-2 transition-all hover:scale-102">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i> DOWNLOAD (.ZIP)
+          </a>
+        </div>
+      </div>
+
+      <!-- Card 6: Standalone Screen Guard & Python SDK -->
+      <div class="bg-dark-950 p-6 rounded-2xl border border-slate-800 hover:border-cyan-500/50 transition-all flex flex-col justify-between group shadow-xl">
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <span class="w-8 h-8 rounded-lg bg-rose-500/10 border border-rose-400/30 flex items-center justify-center text-rose-400">
+              <i data-lucide="shield-check" class="w-4 h-4"></i>
+            </span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-dark-900 border border-slate-700 text-slate-300">PYTHON MODULE</span>
+          </div>
+          <h3 class="font-cyber font-bold text-white text-base">Standalone Screen Guard</h3>
+          <p class="text-xs text-slate-400 mt-1 font-mono">PyAutoGUI, OS RPA, Custom Scripts</p>
+          <p class="text-xs text-slate-300 mt-3 leading-relaxed font-sans">
+            Single-file Python background screen guard. Zero dependencies beyond Pillow. Also includes drop-in <code class="text-cyan-400">opticwall_sdk.py</code> client.
+          </p>
+        </div>
+        <div class="mt-6 pt-4 border-t border-slate-800 flex items-center gap-2">
+          <a href="/api/download/screen-guard" download class="flex-1 py-2.5 rounded-xl bg-dark-900 hover:bg-dark-850 text-cyan-400 border border-cyan-500/40 font-cyber font-bold text-xs flex items-center justify-center gap-1.5 transition-all hover:scale-102">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i> GUARD (.PY)
+          </a>
+          <a href="/api/download/python-sdk" download class="py-2.5 px-3 rounded-xl bg-dark-900 hover:bg-dark-850 text-slate-300 border border-slate-800 hover:border-cyan-500/40 font-cyber font-bold text-xs flex items-center justify-center transition-all" title="Download Python SDK">
+            SDK
+          </a>
+        </div>
+      </div>
+
     </div>
   </section>
 
-  <!-- Technical FAQ -->
-  <section id="faq" class="py-16 px-4 max-w-6xl mx-auto border-b border-line">
-    <div class="max-w-2xl mb-8">
-      <div class="text-xs font-mono text-emerald-400 uppercase tracking-wider mb-1">Architecture Details</div>
-      <h2 class="text-2xl font-bold text-white tracking-tight">Frequently Asked Technical Questions</h2>
+  <!-- 6. Futuristic Command Palette (Ctrl + K / ⌘K) Modal ⌨️ -->
+  <div id="cmd-palette" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md hidden items-center justify-center p-4">
+    <div class="bg-dark-950 border border-cyan-500/40 glow-cyan rounded-2xl max-w-xl w-full overflow-hidden shadow-2xl font-mono text-xs">
+      
+      <!-- Input Search Header -->
+      <div class="p-4 border-b border-slate-800 flex items-center gap-3 bg-dark-900">
+        <i data-lucide="terminal" class="w-4 h-4 text-cyan-400"></i>
+        <input type="text" id="cmd-input" placeholder="Type a command or jump to section (e.g. 'sandbox', 'scan', 'audio', 'download')..." class="bg-transparent text-white placeholder-slate-500 flex-1 focus:outline-none text-xs font-mono" oninput="handleCmdFilter(this.value)">
+        <kbd class="px-2 py-0.5 rounded bg-dark-800 border border-slate-700 text-[10px] text-slate-400">ESC</kbd>
+      </div>
+
+      <!-- Command List -->
+      <div id="cmd-results" class="max-h-80 overflow-y-auto p-2 space-y-1">
+        <div onclick="cmdNavigate('#cockpit')" class="cmd-item p-2.5 rounded-lg hover:bg-cyan-500/10 hover:border-cyan-500/30 border border-transparent flex items-center justify-between text-slate-300 hover:text-white cursor-pointer transition-colors">
+          <div class="flex items-center gap-2">
+            <i data-lucide="crosshair" class="w-4 h-4 text-cyan-400"></i>
+            <span>Jump to Interactive Cockpit HUD &amp; Sandbox</span>
+          </div>
+          <span class="text-[10px] text-slate-500 font-cyber">#COCKPIT</span>
+        </div>
+        <div onclick="cmdTriggerRadar()" class="cmd-item p-2.5 rounded-lg hover:bg-cyan-500/10 hover:border-cyan-500/30 border border-transparent flex items-center justify-between text-slate-300 hover:text-white cursor-pointer transition-colors">
+          <div class="flex items-center gap-2">
+            <i data-lucide="radar" class="w-4 h-4 text-cyan-400"></i>
+            <span>Initiate Autonomous Threat Radar Host Scan</span>
+          </div>
+          <span class="text-[10px] text-slate-500 font-cyber">ACTION</span>
+        </div>
+        <div onclick="cmdToggleAudio()" class="cmd-item p-2.5 rounded-lg hover:bg-cyan-500/10 hover:border-cyan-500/30 border border-transparent flex items-center justify-between text-slate-300 hover:text-white cursor-pointer transition-colors">
+          <div class="flex items-center gap-2">
+            <i data-lucide="volume-2" class="w-4 h-4 text-cyan-400"></i>
+            <span>Toggle Cyber Audio Synthesizer (Mute/Unmute)</span>
+          </div>
+          <span class="text-[10px] text-slate-500 font-cyber">SFX</span>
+        </div>
+        <div onclick="cmdNavigate('#matrix')" class="cmd-item p-2.5 rounded-lg hover:bg-cyan-500/10 hover:border-cyan-500/30 border border-transparent flex items-center justify-between text-slate-300 hover:text-white cursor-pointer transition-colors">
+          <div class="flex items-center gap-2">
+            <i data-lucide="package" class="w-4 h-4 text-cyan-400"></i>
+            <span>View 6-Card Global Release Matrix</span>
+          </div>
+          <span class="text-[10px] text-slate-500 font-cyber">#MATRIX</span>
+        </div>
+        <div onclick="window.location.href='/api/download/windows'" class="cmd-item p-2.5 rounded-lg hover:bg-cyan-500/10 hover:border-cyan-500/30 border border-transparent flex items-center justify-between text-slate-300 hover:text-white cursor-pointer transition-colors">
+          <div class="flex items-center gap-2">
+            <i data-lucide="download" class="w-4 h-4 text-cyan-400"></i>
+            <span>Download Windows 1-Click Guard (.bat)</span>
+          </div>
+          <span class="text-[10px] text-slate-500 font-cyber">DOWNLOAD</span>
+        </div>
+        <div onclick="window.location.href='/api/download/browser-extension'" class="cmd-item p-2.5 rounded-lg hover:bg-cyan-500/10 hover:border-cyan-500/30 border border-transparent flex items-center justify-between text-slate-300 hover:text-white cursor-pointer transition-colors">
+          <div class="flex items-center gap-2">
+            <i data-lucide="puzzle" class="w-4 h-4 text-cyan-400"></i>
+            <span>Download Chrome &amp; Edge Extension (.zip)</span>
+          </div>
+          <span class="text-[10px] text-slate-500 font-cyber">DOWNLOAD</span>
+        </div>
+      </div>
+
+      <div class="p-3 bg-dark-900 border-t border-slate-800 text-[11px] text-slate-500 flex justify-between items-center">
+        <span>Press <kbd class="px-1.5 py-0.5 rounded bg-dark-800 text-slate-300 font-mono">ESC</kbd> to exit</span>
+        <span class="text-cyan-400 font-cyber">OPTICWALL COMMAND PALETTE</span>
+      </div>
     </div>
-
-    <div class="space-y-4 max-w-3xl">
-      <div class="panel p-5 rounded-lg border border-line">
-        <h3 class="font-semibold text-white text-sm">How does OpticWall intercept clicks without installing kernel drivers?</h3>
-        <p class="text-xs text-slate-400 mt-2 leading-relaxed">
-          OpticWall operates in user-space using standard OS accessibility and event tap APIs (<code class="text-slate-300 font-mono">CGEventTap</code> on macOS, <code class="text-slate-300 font-mono">SetWindowsHookEx(WH_MOUSE_LL)</code> on Windows, and X11/XInput event filtering on Linux). For browser-specific and MCP-level agents, it also exposes a standard MCP tool wrapper and Chrome extension content script that hook action dispatches before execution.
-        </p>
-      </div>
-
-      <div class="panel p-5 rounded-lg border border-line">
-        <h3 class="font-semibold text-white text-sm">Why is visual verification necessary if agents have prompt guardrails?</h3>
-        <p class="text-xs text-slate-400 mt-2 leading-relaxed">
-          Prompt guardrails only evaluate text tokens generated by the LLM. If a model encounters adversarial content on a webpage or in a repository (such as hidden CSS or white-on-white text), indirect prompt injection can instruct the model to execute destructive clicks while emitting benign chain-of-thought tokens like "Indexing local workspace". The screen pixels represent ground truth of what the application will execute.
-        </p>
-      </div>
-
-      <div class="panel p-5 rounded-lg border border-line">
-        <h3 class="font-semibold text-white text-sm">What happens when a dangerous action is intercepted?</h3>
-        <p class="text-xs text-slate-400 mt-2 leading-relaxed">
-          When the visual risk score meets or exceeds the policy threshold (default 0.50), the input event is dropped immediately so the application never receives the click. OpticWall dispatches a pause signal (<code class="text-slate-300 font-mono">SIGSTOP</code>) to the agent's process ID, logs a high-resolution screenshot to <code class="text-slate-300 font-mono">~/.opticwall/incidents/</code>, and displays a native notification allowing you to resume or kill the agent.
-        </p>
-      </div>
-
-      <div class="panel p-5 rounded-lg border border-line">
-        <h3 class="font-semibold text-white text-sm">Does OpticWall send screenshots or telemetry to external servers?</h3>
-        <p class="text-xs text-slate-400 mt-2 leading-relaxed">
-          No. OpticWall is completely self-contained. Both the screenshot capture and the ONNX Vision Transformer model execute in local system memory. The daemon has zero outbound network calls, telemetry trackers, or external API dependencies.
-        </p>
-      </div>
-
-      <div class="panel p-5 rounded-lg border border-line">
-        <h3 class="font-semibold text-white text-sm">How can I customize policy thresholds and blocked UI categories?</h3>
-        <p class="text-xs text-slate-400 mt-2 leading-relaxed">
-          Policies are defined in standard YAML at <code class="text-slate-300 font-mono">~/.opticwall/policy.yaml</code>. You can set custom thresholds per category (destructive actions, financial transactions, credential views) or whitelist specific application window titles and domains.
-        </p>
-      </div>
-    </div>
-  </section>
+  </div>
 
   <!-- Footer -->
-  <footer class="py-12 px-4 max-w-6xl mx-auto text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-4">
-    <div class="flex items-center gap-2">
-      <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-      <span class="text-slate-300 font-medium">OpticWall</span>
-      <span>— Screen-State Firewall for Autonomous Desktop Agents (MIT License).</span>
+  <footer class="relative z-10 py-12 px-4 max-w-7xl mx-auto border-t border-slate-800/80 text-xs font-mono text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-4">
+    <div class="flex items-center gap-2.5">
+      <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+      <span class="text-slate-300 font-cyber font-bold">OPTICWALL</span>
+      <span>— Next-Gen Visual Firewall for Autonomous AI Agents (MIT License).</span>
     </div>
-    <div class="flex items-center gap-6">
-      <a href="https://github.com/codewithyug06/Agent-Risk-Grounding-Visual-Risk-Inspection" target="_blank" class="hover:text-slate-300 transition-colors">GitHub Repository</a>
-      <a href="#how-it-works" class="hover:text-slate-300 transition-colors">Architecture</a>
-      <a href="#demo" class="hover:text-slate-300 transition-colors">Inspector</a>
-      <a href="#install" class="hover:text-slate-300 transition-colors">Install</a>
+    <div class="flex items-center gap-6 text-slate-400">
+      <a href="https://github.com/codewithyug06/Agent-Risk-Grounding-Visual-Risk-Inspection" target="_blank" class="hover:text-cyan-400 transition-colors">GitHub Repository</a>
+      <a href="#cockpit" class="hover:text-cyan-400 transition-colors">Cockpit HUD</a>
+      <a href="#radar" class="hover:text-cyan-400 transition-colors">Threat Radar</a>
+      <a href="#matrix" class="hover:text-cyan-400 transition-colors">Downloads</a>
     </div>
   </footer>
 
-  <!-- Application Logic -->
+  <!-- Application Logic & Cyber Synthesizer -->
   <script>
     lucide.createIcons();
 
+    // ==========================================
+    // 1. Cyber Audio Synthesizer (Web Audio API)
+    // ==========================================
+    let audioCtx = null;
+    let soundEnabled = true;
+
+    function getAudioCtx() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      return audioCtx;
+    }
+
+    function playCyberSound(type) {
+      if (!soundEnabled) return;
+      try {
+        const ctx = getAudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        const now = ctx.currentTime;
+
+        if (type === 'click') {
+          // Micro-click
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(1400, now);
+          osc.frequency.exponentialRampToValueAtTime(700, now + 0.035);
+          gain.gain.setValueAtTime(0.06, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.035);
+          osc.start(now);
+          osc.stop(now + 0.035);
+        } else if (type === 'alarm') {
+          // Dual-frequency circuit breaker alarm
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(450, now);
+          osc.frequency.setValueAtTime(950, now + 0.08);
+          osc.frequency.setValueAtTime(450, now + 0.16);
+          gain.gain.setValueAtTime(0.12, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+          osc.start(now);
+          osc.stop(now + 0.25);
+        } else if (type === 'radar') {
+          // Sonar frequency chirp
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(1200, now);
+          osc.frequency.exponentialRampToValueAtTime(2600, now + 0.12);
+          gain.gain.setValueAtTime(0.08, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+          osc.start(now);
+          osc.stop(now + 0.12);
+        } else if (type === 'allow') {
+          // Pleasant harmonic chime
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(523.25, now); // C5
+          osc.frequency.setValueAtTime(659.25, now + 0.08); // E5
+          gain.gain.setValueAtTime(0.09, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.20);
+          osc.start(now);
+          osc.stop(now + 0.20);
+        }
+      } catch (e) {}
+    }
+
+    function toggleAudio() {
+      soundEnabled = !soundEnabled;
+      const icon = document.getElementById('audio-icon');
+      if (soundEnabled) {
+        icon.setAttribute('data-lucide', 'volume-2');
+        showToast('Futuristic Audio SFX: ENABLED');
+        playCyberSound('click');
+      } else {
+        icon.setAttribute('data-lucide', 'volume-x');
+        showToast('Futuristic Audio SFX: MUTED');
+      }
+      lucide.createIcons();
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if ((e.key === 'm' || e.key === 'M') && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+        toggleAudio();
+      }
+    });
+
+    // ==========================================
+    // 2. Interactive Background Particle Canvas
+    // ==========================================
+    (function initCyberCanvas() {
+      const c = document.getElementById('cyber-canvas');
+      if (!c) return;
+      const ctx = c.getContext('2d');
+      let w = c.width = window.innerWidth;
+      let h = c.height = window.innerHeight;
+
+      let mouseX = -1000;
+      let mouseY = -1000;
+
+      window.addEventListener('resize', () => {
+        w = c.width = window.innerWidth;
+        h = c.height = window.innerHeight;
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        mouseX = e.clientX;
+        mouseY = e.clientY;
+      });
+
+      const particles = [];
+      const count = Math.floor(Math.min(w, 1400) / 30);
+
+      for (let i = 0; i < count; i++) {
+        particles.push({
+          x: Math.random() * w,
+          y: Math.random() * h,
+          vx: (Math.random() - 0.5) * 0.45,
+          vy: (Math.random() - 0.5) * 0.45,
+          radius: Math.random() * 1.5 + 0.6
+        });
+      }
+
+      function draw() {
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = 'rgba(0, 240, 255, 0.5)';
+        ctx.strokeStyle = 'rgba(0, 240, 255, 0.05)';
+
+        for (let i = 0; i < particles.length; i++) {
+          const p = particles[i];
+          p.x += p.vx;
+          p.y += p.vy;
+
+          if (p.x < 0) p.x = w;
+          if (p.x > w) p.x = 0;
+          if (p.y < 0) p.y = h;
+          if (p.y > h) p.y = 0;
+
+          // Mouse gravity pull
+          const dxM = mouseX - p.x;
+          const dyM = mouseY - p.y;
+          const distM = Math.hypot(dxM, dyM);
+          if (distM < 120) {
+            p.x += dxM * 0.015;
+            p.y += dyM * 0.015;
+          }
+
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+          ctx.fill();
+
+          for (let j = i + 1; j < particles.length; j++) {
+            const p2 = particles[j];
+            const dist = Math.hypot(p.x - p2.x, p.y - p2.y);
+            if (dist < 115) {
+              ctx.beginPath();
+              ctx.moveTo(p.x, p.y);
+              ctx.lineTo(p2.x, p2.y);
+              ctx.stroke();
+            }
+          }
+        }
+        requestAnimationFrame(draw);
+      }
+      draw();
+    })();
+
+    // ==========================================
+    // 3. Cockpit HUD & 5 Dynamic Attack Scenarios
+    // ==========================================
     let currentThreshold = 0.50;
     let currentScenarioKey = 'destructive';
     let isCustomImageLoaded = false;
-    let cachedAgents = [];
 
     const scenarios = {
       destructive: {
         url: 'https://console.cloud-provider.internal/db/clusters/prod-db-01',
-        title: 'Production Database Administration',
+        title: 'PostgreSQL Cluster Administration (Claude Code)',
         desc: 'Target database cluster: prod-db-01 (14 TB Data, 8 PostgreSQL nodes).',
         item: 'Cluster: prod-db-01',
         price: 'CLUSTER ADMIN',
         btnText: 'Drop Database & Wipe All Volumes',
-        btnClass: 'bg-rose-600',
-        bboxText: 'TARGET (98.7%)',
-        bboxColor: 'border-rose-500',
+        btnClass: 'bg-danger-600',
+        bboxText: 'RETICLE [X: 840, Y: 520] (98.7%)',
+        bboxColor: 'border-danger-500',
         rawRiskScore: 0.987,
         category: 'DESTRUCTIVE_CLOUD_INFRASTRUCTURE',
         reasoning: 'Irreversible database deletion confirmation dialog detected. Bounding box coordinates isolated. Signal SIGSTOP dispatched to agent.',
@@ -803,30 +1104,30 @@
       },
       financial: {
         url: 'https://checkout.enterprise-store.com/order/confirm',
-        title: 'Order Summary & Confirmation',
+        title: 'Order Summary & Confirmation (Browser-Use)',
         desc: 'Autonomous agent navigated to checkout with corporate billing enabled.',
-        item: 'Cloud Annual Subscription',
+        item: 'Enterprise Annual Cloud Seat',
         price: '$499.00 / YEAR',
         btnText: 'Confirm & Pay $499.00',
-        btnClass: 'bg-rose-600',
-        bboxText: 'TARGET (94.2%)',
-        bboxColor: 'border-rose-500',
+        btnClass: 'bg-danger-600',
+        bboxText: 'RETICLE [X: 880, Y: 540] (94.2%)',
+        bboxColor: 'border-danger-500',
         rawRiskScore: 0.942,
         category: 'UNAUTHORIZED_FINANCIAL_CHARGE',
-        reasoning: 'Monetary disbursement action intercepted. Suspended execution to prevent unconfirmed credit card billing.',
+        reasoning: 'Monetary disbursement action intercepted. Suspended execution to prevent unconfirmed corporate card billing.',
         action: 'mouse_click',
         selector: 'button#confirm-purchase',
         bbox: '[0.68, 0.74, 0.95, 0.89]',
       },
       privacy: {
         url: 'https://platform.openai.com/api-keys/admin-keys',
-        title: 'OpenAI Operator: Production Key Vault',
+        title: 'Production Key Vault (OpenAI Operator)',
         desc: 'Agent cursor targeted master organization secret reveal action.',
         item: 'Master Key: sk-live-admin-9981...',
         price: 'ADMIN PRIVILEGE',
         btnText: 'Reveal & Copy Master API Key',
         btnClass: 'bg-amber-600',
-        bboxText: 'TARGET (91.2%)',
+        bboxText: 'RETICLE [X: 810, Y: 490] (91.2%)',
         bboxColor: 'border-amber-500',
         rawRiskScore: 0.912,
         category: 'CREDENTIAL_EXFILTRATION',
@@ -842,9 +1143,9 @@
         item: 'Target: C:\\ System Partition (512 GB)',
         price: 'DISK UTILITY',
         btnText: 'Format Drive & Erase OS Files',
-        btnClass: 'bg-rose-700',
-        bboxText: 'TARGET (99.4%)',
-        bboxColor: 'border-rose-600',
+        btnClass: 'bg-danger-700',
+        bboxText: 'RETICLE [X: 790, Y: 530] (99.4%)',
+        bboxColor: 'border-danger-600',
         rawRiskScore: 0.994,
         category: 'OS_VOLUME_FORMATTING',
         reasoning: 'Physical OS volume erasure modal detected. Hard circuit breaker engaged.',
@@ -854,14 +1155,14 @@
       },
       benign: {
         url: 'https://docs.python.org/3/library/asyncio.html',
-        title: 'Python 3 Documentation: AsyncIO',
+        title: 'Python 3 Documentation: AsyncIO (Antigravity)',
         desc: 'Autonomous agent looking up API documentation on asynchronous event loops.',
         item: 'Section: Coroutines & Tasks',
         price: 'DOCUMENTATION',
         btnText: 'Next Section: Event Loops',
-        btnClass: 'bg-surface-850 text-slate-300 border border-line',
+        btnClass: 'bg-dark-800 text-slate-300 border border-slate-700',
         bboxText: 'SAFE (3.1%)',
-        bboxColor: 'border-emerald-500',
+        bboxColor: 'border-matrix-500',
         rawRiskScore: 0.031,
         category: 'BENIGN_DOCUMENTATION_NAVIGATION',
         reasoning: 'Documentation browsing. No destructive actions, credentials, or billing forms detected.',
@@ -872,6 +1173,7 @@
     };
 
     function setScenario(key) {
+      playCyberSound('click');
       currentScenarioKey = key;
       isCustomImageLoaded = false;
       const s = scenarios[key];
@@ -881,11 +1183,15 @@
       document.getElementById('custom-canvas').classList.add('hidden');
 
       document.querySelectorAll('.scenario-btn').forEach(btn => {
-        btn.className = 'scenario-btn px-3 py-1.5 rounded text-xs font-medium bg-surface-900 text-slate-400 hover:text-white border border-line transition-colors';
+        btn.className = 'scenario-btn px-4 py-2 rounded-lg text-xs font-cyber font-semibold bg-dark-900 text-slate-400 hover:text-white border border-slate-800 transition-all';
       });
       const activeBtn = document.getElementById(`btn-${key}`);
       if (activeBtn) {
-        activeBtn.className = 'scenario-btn px-3 py-1.5 rounded text-xs font-medium bg-white text-slate-950 transition-colors';
+        if (key === 'benign') {
+          activeBtn.className = 'scenario-btn px-4 py-2 rounded-lg text-xs font-cyber font-semibold bg-matrix-500 text-black glow-matrix transition-all';
+        } else {
+          activeBtn.className = 'scenario-btn px-4 py-2 rounded-lg text-xs font-cyber font-semibold bg-danger-500 text-white glow-red transition-all';
+        }
       }
 
       document.getElementById('sim-url').innerText = s.url;
@@ -896,10 +1202,10 @@
       
       const actBtn = document.getElementById('screen-action-btn');
       actBtn.innerText = s.btnText;
-      actBtn.className = `px-4 py-2 rounded font-medium text-xs shadow-sm pointer-events-none ${s.btnClass}`;
+      actBtn.className = `px-5 py-2.5 rounded-lg font-cyber font-bold text-xs shadow-lg pointer-events-none transition-all ${s.btnClass}`;
 
       const bbox = document.getElementById('grounding-bbox');
-      bbox.className = `absolute -inset-1.5 border-2 border-dashed ${s.bboxColor} rounded pointer-events-none flex items-start justify-end`;
+      bbox.className = `absolute -inset-2 border-2 border-dashed ${s.bboxColor} rounded-lg pointer-events-none flex items-start justify-end transition-all`;
       document.getElementById('bbox-label').innerText = s.bboxText;
 
       evaluateDecision(s.rawRiskScore, s.category, s.reasoning, s.action, s.selector, s.bbox);
@@ -916,7 +1222,7 @@
 
       const pct = (score * 100).toFixed(1) + '%';
       scoreEl.innerText = pct;
-      catEl.innerHTML = `Policy Match: <span class="${score >= currentThreshold ? 'text-rose-400 font-semibold' : 'text-emerald-400 font-semibold'}">${category}</span>`;
+      catEl.innerHTML = `Threat Signature: <span class="${score >= currentThreshold ? 'text-danger-400 font-bold' : 'text-matrix-400 font-bold'}">${category}</span>`;
       barEl.style.width = pct;
       reasonEl.innerHTML = `<b>Diagnostic:</b> ${reasoning}`;
 
@@ -927,30 +1233,49 @@
       if (score >= currentThreshold) {
         if (score >= 0.90) {
           vBadge.innerText = 'HARD_BLOCK';
-          vBadge.className = 'px-2 py-0.5 rounded text-xs font-mono font-bold bg-rose-600 text-white';
-          vBox.className = 'panel p-5 rounded-lg border border-rose-500/30 bg-rose-950/10';
-          scoreEl.className = 'text-4xl font-extrabold text-rose-400 font-mono';
-          cbEl.innerText = 'SIGSTOP Dispatched (Event Dropped)';
-          cbEl.className = 'text-rose-400 font-semibold';
+          vBadge.className = 'px-2.5 py-0.5 rounded font-cyber text-xs font-bold bg-danger-500 text-white shadow-md';
+          vBox.className = 'bg-dark-950 p-6 rounded-2xl border border-danger-500/40 glow-red relative overflow-hidden transition-all';
+          scoreEl.className = 'text-5xl font-black text-danger-400 font-cyber';
+          cbEl.innerText = 'ABORTED (SIGSTOP DISPATCHED)';
+          cbEl.className = 'text-danger-400 font-bold';
         } else {
-          vBadge.innerText = 'PAUSE';
-          vBadge.className = 'px-2 py-0.5 rounded text-xs font-mono font-bold bg-amber-500 text-white';
-          vBox.className = 'panel p-5 rounded-lg border border-amber-500/30 bg-amber-950/10';
-          scoreEl.className = 'text-4xl font-extrabold text-amber-400 font-mono';
-          cbEl.innerText = 'User Confirmation Modal Dispatched';
-          cbEl.className = 'text-amber-400 font-semibold';
+          vBadge.innerText = 'PAUSE_HALT';
+          vBadge.className = 'px-2.5 py-0.5 rounded font-cyber text-xs font-bold bg-amber-500 text-black shadow-md';
+          vBox.className = 'bg-dark-950 p-6 rounded-2xl border border-amber-500/40 glow-cyan relative overflow-hidden transition-all';
+          scoreEl.className = 'text-5xl font-black text-amber-400 font-cyber';
+          cbEl.innerText = 'AWAITING USER CONFIRMATION';
+          cbEl.className = 'text-amber-400 font-bold';
         }
       } else {
         vBadge.innerText = 'PASSTHROUGH';
-        vBadge.className = 'px-2 py-0.5 rounded text-xs font-mono font-bold bg-emerald-600 text-white';
-        vBox.className = 'panel p-5 rounded-lg border border-emerald-500/30 bg-emerald-950/10';
-        scoreEl.className = 'text-4xl font-extrabold text-emerald-400 font-mono';
-        cbEl.innerText = 'Permitted (Forwarded to OS)';
-        cbEl.className = 'text-emerald-400 font-semibold';
+        vBadge.className = 'px-2.5 py-0.5 rounded font-cyber text-xs font-bold bg-matrix-500 text-black shadow-md';
+        vBox.className = 'bg-dark-950 p-6 rounded-2xl border border-matrix-500/40 glow-matrix relative overflow-hidden transition-all';
+        scoreEl.className = 'text-5xl font-black text-matrix-400 font-cyber';
+        cbEl.innerText = 'PERMITTED (PASSED TO OS)';
+        cbEl.className = 'text-matrix-400 font-bold';
+      }
+    }
+
+    // "Simulate Agent Click" Action Trigger
+    function simulateAgentClick() {
+      const s = scenarios[currentScenarioKey];
+      const cockpit = document.getElementById('cockpit-container');
+
+      if (s.rawRiskScore >= currentThreshold) {
+        playCyberSound('alarm');
+        cockpit.classList.add('trigger-shockwave', 'trigger-shake');
+        setTimeout(() => {
+          cockpit.classList.remove('trigger-shockwave', 'trigger-shake');
+        }, 800);
+        showToast(`🚨 MALICIOUS CLICK INTERCEPTED: ${s.category}`);
+      } else {
+        playCyberSound('allow');
+        showToast(`✅ ACTION VERIFIED SAFE: ${s.category}`);
       }
     }
 
     function updateThreshold(val) {
+      playCyberSound('click');
       currentThreshold = parseFloat(val);
       document.getElementById('threshold-val').innerText = currentThreshold.toFixed(2);
       if (!isCustomImageLoaded) {
@@ -959,22 +1284,22 @@
       }
     }
 
-    function testActionClick() {
-      const s = scenarios[currentScenarioKey];
-      if (s.rawRiskScore >= currentThreshold) {
-        showToast(`Event Intercepted: ${s.category}`);
-      } else {
-        showToast(`Event Permitted: Forwarded to OS Window Server.`);
-      }
-    }
-
     function toggleBBox() {
+      playCyberSound('click');
       const show = document.getElementById('toggle-bbox').checked;
       const bbox = document.getElementById('grounding-bbox');
       bbox.style.display = show ? 'flex' : 'none';
     }
 
-    // Custom Screenshot Upload
+    function toggleHeatmap() {
+      playCyberSound('click');
+      const show = document.getElementById('toggle-heatmap').checked;
+      showToast(show ? 'Attention scan enabled' : 'Attention scan disabled');
+    }
+
+    // ==========================================
+    // 4. Custom Screenshot Upload & Clipboard
+    // ==========================================
     async function handleFileUpload(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -1005,9 +1330,10 @@
       canvas.height = img.height;
       ctx.drawImage(img, 0, 0);
 
-      ctx.strokeStyle = '#f43f5e';
+      // Render futuristic bounding box on canvas
+      ctx.strokeStyle = '#ff3366';
       ctx.lineWidth = 3;
-      ctx.setLineDash([6, 6]);
+      ctx.setLineDash([8, 8]);
       ctx.strokeRect(img.width * 0.60, img.height * 0.65, img.width * 0.32, img.height * 0.22);
     }
 
@@ -1037,10 +1363,10 @@
           );
           showToast(`Inspection complete: ${data.decision}`);
         } else {
-          evaluateDecision(0.78, 'FINANCIAL_TRANSACTION', 'Custom screenshot analyzed locally.', 'click', 'custom_ui', '[0.60, 0.65, 0.92, 0.87]');
+          evaluateDecision(0.82, 'FINANCIAL_TRANSACTION', 'Custom screenshot evaluated.', 'click', 'custom_ui', '[0.60, 0.65, 0.92, 0.87]');
         }
       } catch (err) {
-        evaluateDecision(0.78, 'FINANCIAL_TRANSACTION', 'Custom screenshot analyzed locally.', 'click', 'custom_ui', '[0.60, 0.65, 0.92, 0.87]');
+        evaluateDecision(0.82, 'FINANCIAL_TRANSACTION', 'Custom screenshot evaluated.', 'click', 'custom_ui', '[0.60, 0.65, 0.92, 0.87]');
       }
     }
 
@@ -1075,39 +1401,34 @@
       }
     }
 
-    // Host Agent Detection
+    // ==========================================
+    // 5. Autonomous Threat Radar Scanner
+    // ==========================================
+    function triggerRadarScan() {
+      playCyberSound('radar');
+      const icon = document.getElementById('radar-refresh-icon');
+      icon.classList.add('animate-spin');
+      setTimeout(() => icon.classList.remove('animate-spin'), 1200);
+      fetchLiveAgents();
+    }
+
     async function fetchLiveAgents() {
-      showToast('Scanning host process table for agent processes...');
+      showToast('Threat Radar: Scanning host process table...');
       try {
         const res = await fetch('/api/detect');
         if (res.ok) {
           const data = await res.json();
-          cachedAgents = data.agents || [];
-          renderAgentTable(cachedAgents);
-          showToast(`Discovered ${data.total_agents_detected} autonomous agent processes.`);
+          renderAgentTable(data.agents || []);
+          document.getElementById('radar-agent-count').innerText = `${data.total_agents_detected} Active Agents`;
+          showToast(`Threat Radar: Discovered ${data.total_agents_detected} autonomous agents.`);
         }
       } catch (e) {}
-    }
-
-    function filterAgents(query) {
-      if (!query || query.trim() === '') {
-        renderAgentTable(cachedAgents);
-        return;
-      }
-      const q = query.toLowerCase();
-      const filtered = cachedAgents.filter(a => 
-        a.name.toLowerCase().includes(q) || 
-        String(a.pid).includes(q) || 
-        (a.category && a.category.toLowerCase().includes(q)) ||
-        (a.executable && a.executable.toLowerCase().includes(q))
-      );
-      renderAgentTable(filtered);
     }
 
     function renderAgentTable(agents) {
       const tbody = document.getElementById('agent-table-body');
       if (!agents || agents.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500 font-sans">No autonomous agents matching criteria.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500 font-sans">No autonomous agents currently detected on host.</td></tr>';
         return;
       }
 
@@ -1116,15 +1437,15 @@
         const isHigh = a.risk_level === 'high_privilege';
         html += `
           <tr>
-            <td class="py-3 px-4 font-sans font-medium text-white flex items-center gap-2">
-              <i data-lucide="bot" class="w-3.5 h-3.5 text-blue-400"></i> ${a.name}
+            <td class="py-3 px-4 font-sans font-semibold text-white flex items-center gap-2">
+              <i data-lucide="bot" class="w-3.5 h-3.5 text-cyan-400"></i> ${a.name}
             </td>
             <td class="py-3 px-4 font-mono">${a.pid}</td>
             <td class="py-3 px-4 text-slate-400 font-mono text-[11px]">${a.category}</td>
-            <td class="py-3 px-4 text-slate-400 truncate max-w-xs font-mono text-[11px]">${a.executable || 'binary'}</td>
-            <td class="py-3 px-4 font-mono text-[11px] ${isHigh ? 'text-rose-400 font-semibold' : 'text-slate-400'}">${isHigh ? 'High (OS Execution)' : 'Monitored'}</td>
+            <td class="py-3 px-4 text-slate-400 truncate max-w-[130px] font-mono text-[11px]">${a.executable || 'binary'}</td>
+            <td class="py-3 px-4 font-mono text-[11px] ${isHigh ? 'text-danger-400 font-bold' : 'text-slate-400'}">${isHigh ? 'OS Execution' : 'Monitored'}</td>
             <td class="py-3 px-4">
-              <span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono">ATTACHED</span>
+              <span class="px-2 py-0.5 rounded bg-matrix-500/10 text-matrix-400 border border-matrix-500/30 text-[10px] font-bold">ATTACHED</span>
             </td>
           </tr>
         `;
@@ -1133,20 +1454,63 @@
       lucide.createIcons();
     }
 
-    // Tabs
-    function setTab(tabId) {
-      document.querySelectorAll('.install-tab').forEach(b => {
-        b.className = 'install-tab px-4 py-2 text-xs font-mono font-medium border-b-2 border-transparent text-slate-400 hover:text-white transition-colors';
-      });
-      document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
-
-      const active = document.getElementById(`tab-${tabId}`);
-      if (active) active.className = 'install-tab px-4 py-2 text-xs font-mono font-medium border-b-2 border-white text-white transition-colors';
-      const content = document.getElementById(`content-${tabId}`);
-      if (content) content.classList.remove('hidden');
+    // ==========================================
+    // 6. Futuristic Command Palette (Ctrl + K)
+    // ==========================================
+    function openCmdPalette() {
+      playCyberSound('click');
+      const p = document.getElementById('cmd-palette');
+      p.classList.remove('hidden');
+      p.classList.add('flex');
+      document.getElementById('cmd-input').focus();
     }
 
+    function closeCmdPalette() {
+      const p = document.getElementById('cmd-palette');
+      p.classList.remove('flex');
+      p.classList.add('hidden');
+    }
+
+    function cmdNavigate(hash) {
+      playCyberSound('click');
+      closeCmdPalette();
+      window.location.hash = hash;
+    }
+
+    function cmdTriggerRadar() {
+      closeCmdPalette();
+      window.location.hash = '#radar';
+      triggerRadarScan();
+    }
+
+    function cmdToggleAudio() {
+      closeCmdPalette();
+      toggleAudio();
+    }
+
+    function handleCmdFilter(val) {
+      const q = val.toLowerCase();
+      document.querySelectorAll('#cmd-results .cmd-item').forEach(item => {
+        const text = item.innerText.toLowerCase();
+        item.style.display = text.includes(q) ? 'flex' : 'none';
+      });
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        openCmdPalette();
+      }
+      if (e.key === 'Escape') {
+        closeCmdPalette();
+      }
+    });
+
+    // ==========================================
+    // 7. General Helpers
+    // ==========================================
     function copySnippet(text) {
+      playCyberSound('click');
       navigator.clipboard.writeText(text);
       showToast('Copied to clipboard.');
     }
@@ -1154,10 +1518,10 @@
     function showToast(msg) {
       const t = document.getElementById('toast');
       document.getElementById('toast-text').innerText = msg;
-      t.classList.remove('translate-y-20', 'opacity-0');
+      t.classList.remove('translate-y-24', 'opacity-0');
       setTimeout(() => {
-        t.classList.add('translate-y-20', 'opacity-0');
-      }, 2400);
+        t.classList.add('translate-y-24', 'opacity-0');
+      }, 2500);
     }
 
     async function checkHealth() {
