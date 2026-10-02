@@ -35,7 +35,7 @@
 
 ## Industry Context & The Problem
 
-As autonomous computer-use agents (Anthropic Claude Computer Use, OpenAI Operator, Antigravity Browser Preview, browser automation agents, and RPA bots) transition from sandboxed benchmarks into production OS and enterprise environments, they gain the ability to click buttons, enter payment information, alter system configurations, and execute terminal commands.
+As autonomous computer-use agents, browser automation bots, OS RPA systems, and desktop coding assistants transition from sandboxed benchmarks into production OS and enterprise environments, they gain the ability to click buttons, enter payment information, alter system configurations, and execute terminal commands.
 
 <img src="https://upload.wikimedia.org/wikipedia/commons/7/78/Satya_Nadella_2024.jpg" width="130" align="right" alt="Satya Nadella" style="margin-left: 20px; border-radius: 8px;">
 
@@ -68,7 +68,7 @@ TRADITIONAL COLLUSIVE MONITORING (INSECURE)
 
 ARG-VRI / OPTICWALL VISUAL FIREWALL (SECURE & NON-COLLUSIVE)
 
-  AI Agent LLM (Any Model: Claude, GPT-4o, DeepSeek)    
+  Autonomous Agent / LLM (Any Foundation Model or Bot)
   Generates action: CLICK(x=840, y=520)                 
 
                             Intercepted before execution
@@ -95,9 +95,9 @@ ARG-VRI / OPTICWALL VISUAL FIREWALL (SECURE & NON-COLLUSIVE)
 
 | Stakeholder / Persona | Operational Benefit |
 | :--- | :--- |
-| **End-Users & Developers** | A lightweight, background **Desktop Visual Firewall** (`opticwall`) protecting local files, wallets, passwords, and sessions while running autonomous agents like Claude Computer Use or Antigravity browser preview. |
+| **End-Users & Developers** | A lightweight, background **Desktop Visual Firewall** (`opticwall`) protecting local files, wallets, passwords, and sessions while running autonomous desktop agents, computer-use models, or browser automation bots. |
 | **Enterprise IT & Security Teams (SOC / CISO)** | Non-collusive, tamper-proof visual audit logging ensuring agent compliance with SOC 2, HIPAA, and GDPR across automated workflows. |
-| **AI Labs (Anthropic, OpenAI, Google DeepMind)** | A drop-in, model-agnostic safety layer for computer-use agents that operates independently of the LLM's architecture or prompt structure. |
+| **AI Labs & Agent Developers** | A drop-in, model-agnostic safety layer for computer-use agents that operates independently of the LLM's architecture or prompt structure. |
 | **RPA & Automation Platforms** | Circuit breaker preventing destructive database deletions, unauthorized payments, or PII leaks in enterprise automation pipelines. |
 | **AI Safety & Red-Teaming Researchers** | A rigorous, empirical benchmark for scalable visual oversight with verified precision, recall, and localization metrics. |
 
@@ -107,7 +107,7 @@ ARG-VRI / OPTICWALL VISUAL FIREWALL (SECURE & NON-COLLUSIVE)
 
 ```mermaid
 graph TD
-    A[Agent Environment<br/>Desktop / Antigravity / Browser] -->|Screen Frames k=6 @ 3 FPS| B[Frame Buffer<br/>224x224 RGB]
+    A[Agent Environment<br/>Desktop / OS / Browser] -->|Screen Frames k=6 @ 3 FPS| B[Frame Buffer<br/>224x224 RGB]
     B --> C[Visual Encoder<br/>ViT-S/16 / DINOv2 / ConvNeXt]
     C -->|Patch-level Tokens 14x14| D[Temporal Fusion Module<br/>Temporal Self-Attention + Delta Dynamics]
     
@@ -248,7 +248,7 @@ should_proceed, decision, incident = wall.monitor_action(
     current_frame=screenshot,  # PIL Image
     action_type="click",
     selector="button#confirm-transfer",
-    agent_name="Claude Computer Use",
+    agent_name="Autonomous Agent",
 )
 
 if not should_proceed:

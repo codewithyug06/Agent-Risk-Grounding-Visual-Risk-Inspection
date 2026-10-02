@@ -208,7 +208,7 @@ async def api_download_item(item: str):
     Generate and serve tailored downloads:
     - OS Installers: windows, mac, linux
     - Browser Extension: browser-extension (Chrome / Edge / Brave MV3 zip)
-    - MCP Config Bundle: mcp-config (Claude, Antigravity, Cursor, OpenAI Operator)
+    - MCP Config Bundle: mcp-config (Universal Stdio / SSE for all autonomous agents)
     - Screen Control Guard: screen-guard (universal python background monitor)
     - Python SDK: python-sdk (drop-in client)
     """
@@ -280,7 +280,7 @@ async def api_download_item(item: str):
             "echo '[*] Installing OpticWall Desktop Guard for macOS'\n"
             "echo '=================================================================='\n"
             "pip install opticwall psutil pillow mss fastapi uvicorn onnxruntime\n"
-            "echo '[+] Registering MCP plugin with Claude Desktop & Claude Code...'\n"
+            "echo '[+] Registering OpticWall MCP plugin with host agents...'\n"
             "claude mcp add opticwall -- python -m src.security_wall.mcp_server 2>/dev/null || true\n"
             "echo '[v] OpticWall is armed and monitoring.'\n"
         )
