@@ -37,7 +37,7 @@ import os
 import random
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, Union
 
 import numpy as np
 import yaml
@@ -71,9 +71,16 @@ def _weak_label(text: str) -> Tuple[int, int]:
     return 0, BENIGN_IDX
 
 
-def _bbox_from_candidate(candidate: Dict[str, Any], size: Tuple[int, int]) -> Optional[List[float]]:
+def _bbox_from_candidate(candidate: Union[Dict[str, Any], str], size: Tuple[int, int]) -> Optional[List[float]]:
     try:
-        attrs = json.loads(candidate.get("attributes", "{}"))
+        # Multimodal-Mind2Web stores pos_candidates as a List[string]: each
+        # candidate is itself a JSON-encoded string, not a dict. Parse it
+        # first so .get("attributes", ...) below doesn't throw on a str.
+        if isinstance(candidate, str):
+            candidate = json.loads(candidate)
+        attrs = candidate.get("attributes", "{}")
+        if isinstance(attrs, str):
+            attrs = json.loads(attrs)
         rect = attrs.get("bounding_box_rect")
         if not rect:
             return None
@@ -114,7 +121,10 @@ def _load_image(example: Dict, key: str) -> Optional[Image.Image]:
 
 def _iter_multimodal_mind2web(resolution: Tuple[int, int]):
     """Yield (image, action_text, source, meta) for Multimodal-Mind2Web."""
-    path = RAW_ROOT / "Multimodal-Mind2Web"
+    # "-v2" is a fresh re-download (current datasets/pyarrow write a newer
+    # Arrow IPC format); the original "Multimodal-Mind2Web" cache predates
+    # a library upgrade and raises "Old metadata version not supported".
+    path = RAW_ROOT / "Multimodal-Mind2Web-v2"
     ds = load_from_disk(path)
     for split in ["train", "test_domain", "test_task", "test_website"]:
         if split not in ds:
@@ -154,12 +164,24 @@ def _iter_screenspot(version: str, resolution: Tuple[int, int]):
         img = _load_image(ex, "image")
         if img is None:
             continue
+        orig_size = img.size  # must normalize bbox against this, not the resized size below
         img = img.resize(resolution, Image.LANCZOS)
         instr = ex.get("instruction", "")
         bbox = ex.get("bbox", [0, 0, 1, 1])
-        if max(bbox) > 1.0:
-            W, H = img.size
-            bbox = [bbox[0] / W, bbox[1] / H, bbox[2] / W, bbox[3] / H]
+        if version == "v1":
+            # ScreenSpot (v1) already stores normalized [x1, y1, x2, y2].
+            pass
+        else:
+            # ScreenSpot-v2 stores raw pixel [x, y, w, h] -- confirmed via
+            # dataset_info.json (dtype int32) and a direct sample check
+            # (e.g. [910, 78, 44, 34] against a 960x540 image: 44 and 34 are
+            # far too small to be an x2/y2 pixel coordinate on this image,
+            # and are in fact width/height). Convert to [x1,y1,x2,y2] in
+            # pixels first, using the image's ORIGINAL size (bbox is defined
+            # against that, not the resolution it gets resized to above).
+            x, y, w, h = bbox
+            W, H = orig_size
+            bbox = [x / W, y / H, (x + w) / W, (y + h) / H]
         meta = {
             "data_type": ex.get("data_type", ""),
             "data_source": ex.get("data_source", ""),

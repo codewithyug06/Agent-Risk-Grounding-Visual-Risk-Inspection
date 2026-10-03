@@ -17,11 +17,12 @@ class LocalizationHead(nn.Module):
     Also generates Grad-CAM heatmap for interpretability.
     """
 
+    ASPECT_RATIOS = (0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0)  # w / h
+
     def __init__(
         self,
         embed_dim: int,
-        anchor_sizes: List[int] = [32, 64, 128, 256],
-        num_anchors: int = 9,
+        anchor_sizes: List[int] = [8, 16, 32, 64],
         num_classes: int = 1,  # Objectness only
         feature_stride: int = 16,
         image_size: int = 224,
@@ -29,8 +30,7 @@ class LocalizationHead(nn.Module):
         """
         Args:
             embed_dim: Input embedding dimension from temporal fusion
-            anchor_sizes: Base anchor sizes in pixels
-            num_anchors: Number of anchors per spatial location
+            anchor_sizes: Base anchor sizes in pixels (sqrt of anchor area)
             num_classes: Number of classes (1 for objectness)
             feature_stride: Stride of feature map relative to input image
             image_size: Input image size
@@ -38,8 +38,8 @@ class LocalizationHead(nn.Module):
         super().__init__()
 
         self.embed_dim = embed_dim
-        self.anchor_sizes = anchor_sizes
-        self.num_anchors = num_anchors
+        self.anchor_sizes = list(anchor_sizes)
+        self.num_anchors = len(self.anchor_sizes) * len(self.ASPECT_RATIOS)
         self.num_classes = num_classes
         self.feature_stride = feature_stride
         self.image_size = image_size
@@ -63,50 +63,52 @@ class LocalizationHead(nn.Module):
         self.objectness_head = nn.Sequential(
             nn.Linear(embed_dim, embed_dim // 2),
             nn.GELU(),
-            nn.Linear(embed_dim // 2, num_anchors),
+            nn.Linear(embed_dim // 2, self.num_anchors),
         )
 
-        # Bbox regression head (predicts offsets from anchors)
+        # Bbox regression head: per-anchor offsets (tx, ty, tw, th) decoded
+        # against the fixed anchor geometry in _decode(). Small init on the
+        # last layer so every initial box starts at its anchor.
         self.bbox_head = nn.Sequential(
             nn.Linear(embed_dim, embed_dim // 2),
             nn.GELU(),
-            nn.Linear(embed_dim // 2, num_anchors * 4),
+            nn.Linear(embed_dim // 2, self.num_anchors * 4),
         )
+        nn.init.normal_(self.bbox_head[-1].weight, std=0.01)
+        nn.init.zeros_(self.bbox_head[-1].bias)
+
+        # Low prior objectness (p ~= 0.01) so the ~5.5k easy negatives do not
+        # dominate the first steps (RetinaNet initialization).
+        nn.init.normal_(self.objectness_head[-1].weight, std=0.01)
+        nn.init.constant_(self.objectness_head[-1].bias, -4.595)
 
         # Class head (optional, for multi-class localization)
         if num_classes > 1:
             self.class_head = nn.Sequential(
                 nn.Linear(embed_dim, embed_dim // 2),
                 nn.GELU(),
-                nn.Linear(embed_dim // 2, num_anchors * num_classes),
+                nn.Linear(embed_dim // 2, self.num_anchors * num_classes),
             )
         else:
             self.class_head = None
 
         logger.info(f"LocalizationHead initialized: embed_dim={embed_dim}, "
-                    f"fm_size={self.fm_size}, num_anchors={num_anchors}, "
+                    f"fm_size={self.fm_size}, num_anchors={self.num_anchors}, "
                     f"anchor_sizes={anchor_sizes}")
 
     def _generate_anchors(self) -> torch.Tensor:
         """Generate anchor boxes for each spatial location."""
-        anchors = []
         fm_size = self.fm_size
         stride = self.feature_stride
 
-        # Aspect ratios for anchors
-        aspect_ratios = [0.5, 1.0, 2.0]  # 3 aspect ratios
-        scales = [2**0, 2**(1/3), 2**(2/3)]  # 3 scales
-
-        for base_size in self.anchor_sizes:
-            for scale in scales:
-                for ar in aspect_ratios:
-                    w = base_size * scale * np.sqrt(ar)
-                    h = base_size * scale / np.sqrt(ar)
-                    anchors.append([w, h])
-
-        # Limit to num_anchors
-        anchors = anchors[:self.num_anchors]
-        anchors = torch.tensor(anchors, dtype=torch.float32)  # (A, 2) - width, height
+        # Every (size, aspect ratio) pair is kept: w = s*sqrt(ar), h = s/sqrt(ar),
+        # so area = s^2 and ar = w/h. Wide-thin ratios (up to 16:1) are needed
+        # because UI elements (links, text fields) are typically ~10:1.
+        shapes = []
+        for s in self.anchor_sizes:
+            for ar in self.ASPECT_RATIOS:
+                shapes.append([s * np.sqrt(ar), s / np.sqrt(ar)])
+        anchors = torch.tensor(shapes, dtype=torch.float32)  # (A, 2) - width, height
 
         # Create grid of anchor centers
         shift_x = (torch.arange(fm_size) + 0.5) * stride
@@ -133,6 +135,31 @@ class LocalizationHead(nn.Module):
 
         all_anchors = torch.tensor(all_anchors, dtype=torch.float32)  # (H*W*A, 4)
         return all_anchors
+
+    def _decode(self, offsets: torch.Tensor) -> torch.Tensor:
+        """
+        Decode per-anchor offsets to pixel xyxy boxes (standard anchor-relative
+        parameterization):
+            cx = acx + tx * aw        w = aw * exp(tw)
+            cy = acy + ty * ah        h = ah * exp(th)
+        Args:
+            offsets: (B, H, W, A, 4) raw (tx, ty, tw, th)
+        Returns:
+            (B, H, W, A, 4) xyxy in pixel coordinates
+        """
+        H, W = offsets.shape[1], offsets.shape[2]
+        anchors = self.anchors.view(self.fm_size, self.fm_size, self.num_anchors, 4)[:H, :W]
+        aw = anchors[..., 2] - anchors[..., 0]
+        ah = anchors[..., 3] - anchors[..., 1]
+        acx = (anchors[..., 0] + anchors[..., 2]) / 2
+        acy = (anchors[..., 1] + anchors[..., 3]) / 2
+
+        tx, ty, tw, th = offsets.unbind(-1)
+        cx = acx + tx * aw
+        cy = acy + ty * ah
+        w = aw * torch.exp(tw.clamp(-4.0, 4.0))
+        h = ah * torch.exp(th.clamp(-4.0, 4.0))
+        return torch.stack([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], dim=-1)
 
     def forward(
         self,
@@ -168,9 +195,10 @@ class LocalizationHead(nn.Module):
         obj_logits = self.objectness_head(features)  # (B, N, num_anchors)
         obj_logits = obj_logits.view(B, H, W, self.num_anchors)
 
-        # Bbox regression
-        bbox_pred = self.bbox_head(features)  # (B, N, num_anchors*4)
-        bbox_pred = bbox_pred.view(B, H, W, self.num_anchors, 4)
+        # Bbox regression: raw offsets -> decoded pixel boxes per anchor
+        offsets = self.bbox_head(features)  # (B, N, num_anchors*4)
+        offsets = offsets.view(B, H, W, self.num_anchors, 4)
+        bbox_pred = self._decode(offsets)  # (B, H, W, A, 4) pixel xyxy
 
         # Get best anchor per spatial location
         obj_probs = torch.sigmoid(obj_logits)  # (B, H, W, A)
@@ -456,8 +484,7 @@ def create_localization_head(config: Dict) -> LocalizationHead:
     loc_config = config.get("localization", {})
     return LocalizationHead(
         embed_dim=config.get("embed_dim", 384),
-        anchor_sizes=loc_config.get("anchor_sizes", [32, 64, 128, 256]),
-        num_anchors=loc_config.get("num_anchors", 9),
+        anchor_sizes=loc_config.get("anchor_sizes", [8, 16, 32, 64]),
         feature_stride=loc_config.get("feature_stride", 16),
         image_size=config.get("image_size", 224),
     )

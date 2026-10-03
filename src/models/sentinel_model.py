@@ -108,7 +108,7 @@ class SentinelModel(nn.Module):
             max_cat_prob * (1 - risk_output["risk_score"].squeeze(-1))
         )
 
-        return {
+        out = {
             "risk_score": risk_output["risk_score"],           # (B, 1)
             "risk_logits": risk_output["risk_logits"],         # (B, 1)
             "category": category,                              # List[str] length B
@@ -130,6 +130,13 @@ class SentinelModel(nn.Module):
             "heatmap": None,  # Generated on demand via generate_heatmap()
             "confidence": confidence,                          # (B,)
         }
+        if not torch.jit.is_tracing():
+            # Constant (non-data-dependent) entries break ONNX tracing, so
+            # they are attached only for training/eval callers such as
+            # SentinelLoss, which needs the anchor geometry for matching.
+            out["anchors"] = self.localization_head.anchors
+            out["image_size"] = self.image_size
+        return out
 
     def predict(self, frames: List[Image.Image]) -> Dict[str, Any]:
         """

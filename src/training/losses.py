@@ -109,6 +109,7 @@ class SentinelLoss(nn.Module):
         focal_gamma: float = 2.0,
         giou_weight: float = 1.0,
         l1_weight: float = 0.5,
+        obj_weight: float = 1.0,
     ):
         super().__init__()
 
@@ -119,6 +120,16 @@ class SentinelLoss(nn.Module):
         self.use_focal_loss = use_focal_loss
         self.giou_weight = giou_weight
         self.l1_weight = l1_weight
+
+        # Proper anchor-IoU-matched loss (see AnchorMatchedLocalizationLoss
+        # docstring): used when the model exposes raw per-anchor grids +
+        # anchor geometry, since the post-argmax "bbox" below has no usable
+        # gradient for *where* to look. Falls back to the old post-argmax
+        # GIoU/L1 path (below) when those keys are absent, e.g. in unit
+        # tests that construct a dummy `predictions` dict by hand.
+        self.anchor_loc_loss_fn = AnchorMatchedLocalizationLoss(
+            giou_weight=giou_weight, l1_weight=l1_weight, obj_weight=obj_weight,
+        )
 
         # Risk loss
         if use_focal_loss:
@@ -186,7 +197,33 @@ class SentinelLoss(nn.Module):
         has_bbox = targets.get("has_bbox", torch.zeros(B, device=device))
         harmful_mask = (targets["risk_label"] == 1) & (has_bbox > 0.5)
 
-        if harmful_mask.any():
+        if (
+            "bbox_pred_grid" in predictions
+            and "objectness_logits_grid" in predictions
+            and "anchors" in predictions
+        ):
+            # Anchor-IoU-matched path: supervises objectness (which anchor/
+            # location to pick) and the matched anchor's raw box regression,
+            # both of which are direct differentiable functions of the
+            # network's own linear outputs (see AnchorMatchedLocalizationLoss).
+            image_size = predictions.get("image_size", 224)
+            anchors = predictions["anchors"].to(device)
+            harmful_has_bbox = harmful_mask.float()
+            gt_bbox_pixel = targets["bbox"].to(device) * image_size
+
+            anchor_losses = self.anchor_loc_loss_fn(
+                bbox_pred_grid=predictions["bbox_pred_grid"],
+                objectness_logits_grid=predictions["objectness_logits_grid"],
+                anchors=anchors,
+                gt_bbox_pixel=gt_bbox_pixel,
+                has_bbox=harmful_has_bbox,
+                image_size=image_size,
+            )
+            loc_loss = anchor_losses["total"]
+            giou_loss = anchor_losses["giou_loss"]
+            l1_loss = anchor_losses["l1_loss"]
+            obj_loss = anchor_losses["obj_loss"]
+        elif harmful_mask.any():
             pred_bbox = predictions["bbox"][harmful_mask]  # (N_harm, 4)
             gt_bbox = targets["bbox"][harmful_mask]  # (N_harm, 4)
 
@@ -197,10 +234,12 @@ class SentinelLoss(nn.Module):
             l1_loss = F.l1_loss(pred_bbox, gt_bbox, reduction="mean")
 
             loc_loss = self.giou_weight * giou_loss + self.l1_weight * l1_loss
+            obj_loss = torch.tensor(0.0, device=device)
         else:
             loc_loss = torch.tensor(0.0, device=device)
             giou_loss = torch.tensor(0.0, device=device)
             l1_loss = torch.tensor(0.0, device=device)
+            obj_loss = torch.tensor(0.0, device=device)
 
         # Total loss
         total_loss = (
@@ -216,6 +255,7 @@ class SentinelLoss(nn.Module):
             "localization_loss": loc_loss,
             "giou_loss": giou_loss,
             "l1_loss": l1_loss,
+            "obj_loss": obj_loss,
         }
 
     def _compute_giou_loss(
@@ -403,12 +443,13 @@ class AnchorMatchedLocalizationLoss(nn.Module):
         self.giou_weight = giou_weight
         self.l1_weight = l1_weight
         self.obj_weight = obj_weight
-        # With fm_size=14 and num_anchors=9, there are 14*14*9=1764 anchors
-        # per sample and only 1 positive — an extreme ~1763:1 imbalance.
-        # Plain BCE is dominated by the trivial "predict low everywhere"
-        # negative-class solution in this regime (the exact problem Focal
-        # Loss was introduced to solve in RetinaNet); using it here instead.
-        self.obj_loss_fn = FocalLoss(alpha=0.75, gamma=2.0, reduction="mean")
+        # Objectness target = IoU of each anchor's decoded box with the GT
+        # (quality-aware, VarifocalNet/GFL style). Anchors with IoU >= pos_iou_thresh
+        # are positives; the matched anchor is always a positive. This makes
+        # objectness rank anchors by localization quality, so the argmax used at
+        # inference selects good boxes.
+        self.pos_iou_thresh = 0.5
+        self.matched_target_floor = 0.1
 
     @staticmethod
     def _box_iou(boxes1: torch.Tensor, boxes2: torch.Tensor) -> torch.Tensor:
@@ -445,6 +486,23 @@ class AnchorMatchedLocalizationLoss(nn.Module):
 
         giou = iou - (area_c - union) / area_c
         return (1 - giou).mean()
+
+    @staticmethod
+    def _quality_focal_loss(logits: torch.Tensor, target: torch.Tensor, alpha: float = 0.75, gamma: float = 2.0) -> torch.Tensor:
+        """
+        Varifocal-style loss with soft (IoU) targets. Positives are weighted by
+        |target - p|^gamma; negatives by alpha * p^gamma (focal down-weighting
+        of the ~5,500:1 easy-negative majority).
+        """
+        p = torch.sigmoid(logits)
+        bce = F.binary_cross_entropy_with_logits(logits, target, reduction="none")
+        weight = torch.where(
+            target > 0,
+            (target - p).abs().pow(gamma),
+            alpha * p.pow(gamma),
+        )
+        num_pos = (target > 0).sum().clamp(min=1).float()
+        return (weight * bce).sum() / num_pos
 
     def forward(
         self,
@@ -486,11 +544,20 @@ class AnchorMatchedLocalizationLoss(nn.Module):
             valid_idx = valid.nonzero(as_tuple=True)[0]
             for i, sample_idx in enumerate(valid_idx):
                 anchor_idx = best_anchor_per_sample[i].item()
-                obj_target[sample_idx, anchor_idx] = 1.0
+                with torch.no_grad():
+                    decoded_iou = self._box_iou(
+                        bbox_pred_flat[sample_idx].detach(),
+                        gt_bbox_pixel[sample_idx:sample_idx + 1],
+                    ).squeeze(1)  # (H*W*A,)
+                    is_pos = decoded_iou >= self.pos_iou_thresh
+                    is_pos[anchor_idx] = True
+                    soft = decoded_iou.clamp(min=0.0)
+                    soft[anchor_idx] = soft[anchor_idx].clamp(min=self.matched_target_floor)
+                    obj_target[sample_idx] = torch.where(is_pos, soft, torch.zeros_like(soft))
                 reg_pred.append(bbox_pred_flat[sample_idx, anchor_idx])
                 reg_target.append(gt_bbox_pixel[sample_idx])
 
-        obj_loss = self.obj_loss_fn(obj_logits_flat, obj_target)
+        obj_loss = self._quality_focal_loss(obj_logits_flat, obj_target)
 
         if reg_pred:
             reg_pred = torch.stack(reg_pred) / image_size
@@ -589,4 +656,5 @@ def create_loss_function(config: Dict) -> SentinelLoss:
         focal_gamma=loss_config.get("focal_gamma", 2.0),
         giou_weight=loss_config.get("giou_weight", 1.0),
         l1_weight=loss_config.get("l1_weight", 0.5),
+        obj_weight=loss_config.get("obj_weight", 1.0),
     )

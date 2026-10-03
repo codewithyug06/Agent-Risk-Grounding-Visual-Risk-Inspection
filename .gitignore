@@ -20,6 +20,7 @@ Thumbs.db
 
 data/Mind2Web/
 data/Multimodal-Mind2Web/
+data/Multimodal-Mind2Web-v2/
 data/ScreenSpot/
 data/ScreenSpot-v2/
 data/AgentTrek/
@@ -43,6 +44,7 @@ notebooks/sample_window.png
 *.log
 
 checkpoints/*
+checkpoints_*/
 !checkpoints/.gitkeep
 !checkpoints/stage_b_30epochs/
 !data/processed/.gitkeep

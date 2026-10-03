@@ -186,7 +186,11 @@ def main() -> None:
         out_path = PROCESSED_DIR / f"{split}.jsonl"
         with open(out_path, "a", encoding="utf-8") as f:
             for rec in records[split]:
-                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                # ensure_ascii=True (default): loaders.py opens JSONL files
+                # without specifying an encoding, so on Windows it falls back
+                # to cp1252, which can't decode raw non-ASCII UTF-8 bytes.
+                # Escaping non-ASCII as \uXXXX keeps the file ASCII-safe.
+                f.write(json.dumps(rec) + "\n")
         print(
             f"{split}: appended {len(records[split])} records "
             f"(harmful={counts[split]['harmful']}, benign={counts[split]['benign']}), "

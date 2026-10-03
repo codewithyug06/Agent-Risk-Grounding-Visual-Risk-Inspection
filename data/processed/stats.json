@@ -15,11 +15,11 @@
     "harmful": 1792,
     "benign": 12812,
     "category_counts": {
-      "destructive": 495,
+      "benign": 12812,
       "financial": 442,
-      "privacy": 195,
       "irreversible_external": 660,
-      "benign": 12812
+      "destructive": 495,
+      "privacy": 195
     }
   },
   "val": {
@@ -27,11 +27,11 @@
     "harmful": 339,
     "benign": 2426,
     "category_counts": {
-      "destructive": 96,
+      "benign": 2426,
       "financial": 100,
-      "privacy": 33,
       "irreversible_external": 110,
-      "benign": 2426
+      "destructive": 96,
+      "privacy": 33
     }
   },
   "test": {
@@ -39,11 +39,11 @@
     "harmful": 342,
     "benign": 2517,
     "category_counts": {
-      "destructive": 99,
-      "financial": 105,
-      "privacy": 43,
+      "benign": 2517,
       "irreversible_external": 95,
-      "benign": 2517
+      "financial": 105,
+      "destructive": 99,
+      "privacy": 43
     }
   }
 }
