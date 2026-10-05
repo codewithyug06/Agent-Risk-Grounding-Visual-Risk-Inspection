@@ -165,7 +165,7 @@ class TestLocalizationHead:
         head = create_localization_head(self.config)
         # anchors: (H*W*A, 4)
         assert head.anchors.shape[1] == 4
-        expected = head.fm_size * head.fm_size * head.num_anchors  # 14*14*28
+        expected = head.fm_size * head.fm_size * head.num_anchors  # 14*14*32
         assert head.anchors.shape[0] == expected
 
     def test_forward_shape(self):
@@ -185,7 +185,7 @@ class TestLocalizationHead:
         assert "bbox_pred" in out
         assert "anchor_logits" in out
         # objectness: (B, H, W, A)
-        assert out["objectness"].shape == (2, 14, 14, 28)
+        assert out["objectness"].shape == (2, 14, 14, 32)
         # bbox: (B, 4) normalized
         assert out["bbox"].shape == (2, 4)
         # bbox_pixel: (B, 4) pixel coords
@@ -291,7 +291,7 @@ class TestLocalizationHead:
             x = torch.randn(1, 196, 384)
             with torch.no_grad():
                 out = head(x)
-            assert out["objectness"].shape[3] == len(anchor_sizes) * 7
+            assert out["objectness"].shape[3] == len(anchor_sizes) * 8
 
 
 class TestLocalizationIntegration:

@@ -82,6 +82,7 @@ class SentinelTrainer:
         self.checkpoint_metric = config.get("checkpoint_metric", "recall_harmful")
         self.early_stopping_patience = config.get("early_stopping_patience", 5)
         self.early_stopping_counter = 0
+        self.best_loc_iou = float("-inf")
 
         # Mixed precision
         self.device_type = "cuda" if str(device).startswith("cuda") else "cpu"
@@ -158,13 +159,24 @@ class SentinelTrainer:
                 self._save_metrics_csv(epoch, train_metrics, val_metrics)
                 self._save_sample_visualizations(epoch)
 
-                # Checkpointing
+                # Checkpointing: recall drives best.pt; localization IoU drives
+                # best_loc.pt. Either improving resets patience, so localization
+                # is not cut off while recall plateaus.
                 metric_value = val_metrics.get(self.checkpoint_metric, val_metrics["loss"])
+                loc_iou = val_metrics.get("localization_iou", 0.0)
+                improved = False
                 if metric_value > self.best_metric:
                     self.best_metric = metric_value
                     self._save_checkpoint(epoch, val_metrics, is_best=True)
-                    self.early_stopping_counter = 0
                     logger.info(f"New best {self.checkpoint_metric}: {metric_value:.4f}")
+                    improved = True
+                if loc_iou > self.best_loc_iou:
+                    self.best_loc_iou = loc_iou
+                    self._save_checkpoint(epoch, val_metrics, is_best=True, suffix="_loc")
+                    logger.info(f"New best localization_iou: {loc_iou:.4f}")
+                    improved = True
+                if improved:
+                    self.early_stopping_counter = 0
                 else:
                     self.early_stopping_counter += 1
                     logger.info(f"No improvement for {self.early_stopping_counter} epochs")
@@ -226,7 +238,10 @@ class SentinelTrainer:
                 autocast_ctx = autocast(enabled=self.mixed_precision)
 
             with autocast_ctx:
-                predictions = self.model(frames)
+                predictions = self.model(
+                    frames,
+                    gt_bbox_pixel=targets["bbox"] * self.model.image_size,
+                )
                 loss_dict = self.loss_fn(predictions, targets)
                 loss = loss_dict["total_loss"]
 
@@ -323,7 +338,7 @@ class SentinelTrainer:
             # Collect predictions
             all_preds["risk_score"].append(predictions["risk_score"].cpu())
             all_preds["category_probs"].append(predictions["category_probs"].cpu())
-            all_preds["bbox"].append(predictions["bbox"].cpu())
+            all_preds["bbox"].append(predictions.get("bbox_refined", predictions["bbox"]).cpu())
 
             all_targets["risk_label"].append(targets["risk_label"].cpu())
             all_targets["category_label"].append(targets["category_label"].cpu())

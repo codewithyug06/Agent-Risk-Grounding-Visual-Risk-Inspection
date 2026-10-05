@@ -46,7 +46,6 @@ notebooks/sample_window.png
 checkpoints/*
 checkpoints_*/
 !checkpoints/.gitkeep
-!checkpoints/stage_b_30epochs/
 !data/processed/.gitkeep
 
 # Evaluation outputs and hydra logs

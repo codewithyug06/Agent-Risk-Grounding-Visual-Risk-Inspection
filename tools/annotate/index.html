@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SENTINEL-Vision Annotator</title>
+<style>
+  :root { --bg:#111; --fg:#eee; --accent:#4ea1ff; --warn:#ff8a4e; }
+  body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--fg); display:flex; height:100vh; }
+  #side { width:300px; padding:14px; border-right:1px solid #333; overflow:auto; }
+  #main { flex:1; display:flex; flex-direction:column; padding:14px; min-width:0; }
+  button { background:#222; color:var(--fg); border:1px solid #444; padding:8px 10px; margin:3px 0; width:100%; text-align:left; cursor:pointer; border-radius:4px; }
+  button.sel { background:var(--accent); color:#000; }
+  button.primary { background:#1e5; color:#000; font-weight:600; }
+  .muted { color:#999; font-size:12px; }
+  #stage { position:relative; flex:1; overflow:hidden; background:#000; display:flex; align-items:center; justify-content:center; }
+  #img { max-width:100%; max-height:100%; display:block; user-select:none; }
+  #box { position:absolute; border:2px solid var(--warn); background:rgba(255,138,78,.15); pointer-events:none; display:none; }
+  #action { font-family: ui-monospace, monospace; background:#1b1b1b; padding:8px; border-radius:4px; white-space:pre-wrap; word-break:break-word; }
+  #status { font-size:13px; margin-top:8px; }
+  kbd { background:#333; padding:1px 5px; border-radius:3px; }
+</style>
+</head>
+<body>
+<div id="side">
+  <h3 style="margin:4px 0">SENTINEL Annotator</h3>
+  <p class="muted">1. Load the manifest (JSON list of items).<br>2. Load the screenshots folder.<br>3. Label each step. For harmful steps, drag a box around the risky element.<br>Keys: <kbd>←</kbd> <kbd>→</kbd> move, <kbd>1</kbd>–<kbd>5</kbd> label, <kbd>U</kbd> unsure, <kbd>Ctrl+S</kbd> save.</p>
+  <button onclick="loadManifest()">Load manifest (.json)</button>
+  <button onclick="loadImages()">Load screenshots folder</button>
+  <hr style="border-color:#333">
+  <div class="muted">Label</div>
+  <button data-label="0" onclick="setLabel(0)">1  Benign (safe)</button>
+  <button data-label="1" onclick="setLabel(1)">2  Destructive (delete/overwrite)</button>
+  <button data-label="2" onclick="setLabel(2)">3  Financial (payment/transfer)</button>
+  <button data-label="3" onclick="setLabel(3)">4  Privacy (share/export data)</button>
+  <button data-label="4" onclick="setLabel(4)">5  Irreversible external (send/submit)</button>
+  <button onclick="setLabel(-1)">U  Unsure (needs review)</button>
+  <hr style="border-color:#333">
+  <div class="muted">Confidence</div>
+  <button id="c3" onclick="setConf(3)">High</button>
+  <button id="c2" onclick="setConf(2)">Medium</button>
+  <button id="c1" onclick="setConf(1)">Low</button>
+  <hr style="border-color:#333">
+  <button onclick="clearBox()">Clear box</button>
+  <button class="primary" onclick="saveAll()">Save annotations (.json)</button>
+  <div id="status"></div>
+</div>
+<div id="main">
+  <div class="muted" id="pos"></div>
+  <div id="stage">
+    <img id="img" alt="">
+    <div id="box"></div>
+  </div>
+  <div style="margin-top:10px">
+    <div class="muted">Action text / instruction (from dataset)</div>
+    <div id="action"></div>
+  </div>
+</div>
+<input type="file" id="fileManifest" accept=".json" style="display:none">
+<input type="file" id="fileImages" accept="image/*" webkitdirectory multiple style="display:none">
+<script>
+let items = [];      // manifest entries: {id, image, action, instruction}
+let imageMap = {};   // filename -> object URL
+let ann = {};        // id -> {label, conf, box, annotator, saved_at}
+let idx = 0;
+let drawing = null;
+const annotator = localStorage.getItem("annotator") || prompt("Annotator name/initials:") || "anon";
+localStorage.setItem("annotator", annotator);
+
+function loadManifest() {
+  const f = document.getElementById("fileManifest");
+  f.onchange = async () => {
+    items = JSON.parse(await f.files[0].text());
+    idx = 0; ann = {};
+    status(`Loaded ${items.length} items`);
+    show();
+  };
+  f.click();
+}
+
+function loadImages() {
+  const f = document.getElementById("fileImages");
+  f.onchange = () => {
+    imageMap = {};
+    for (const file of f.files) imageMap[file.name] = URL.createObjectURL(file);
+    status(`Loaded ${Object.keys(imageMap).length} images`);
+    show();
+  };
+  f.click();
+}
+
+function cur() { return items[idx]; }
+
+function show() {
+  if (!items.length) return;
+  const it = cur();
+  const name = it.image.split(/[\\/]/).pop();
+  document.getElementById("img").src = imageMap[name] || "";
+  document.getElementById("action").textContent = `${it.action || ""}\n\n${it.instruction || ""}`;
+  document.getElementById("pos").textContent = `Item ${idx + 1} / ${items.length}  |  ${it.id}  |  annotator: ${annotator}`;
+  const a = ann[it.id] || {};
+  document.querySelectorAll("button[data-label]").forEach(b => b.classList.toggle("sel", Number(b.dataset.label) === a.label));
+  [1, 2, 3].forEach(c => document.getElementById("c" + c).classList.toggle("sel", a.conf === c));
+  drawBox(a.box);
+}
+
+function setLabel(l) {
+  const it = cur(); if (!it) return;
+  const prev = ann[it.id] || {};
+  ann[it.id] = Object.assign({}, prev, { label: l, annotator, saved_at: new Date().toISOString() });
+  if (l === 0 || l === -1) ann[it.id].box = null;
+  show();
+  if (l !== -1 && idx < items.length - 1) { idx++; show(); }
+}
+
+function setConf(c) {
+  const it = cur(); if (!it) return;
+  ann[it.id] = Object.assign({}, ann[it.id] || {}, { conf: c, annotator });
+  show();
+}
+
+function drawBox(b) {
+  const el = document.getElementById("box");
+  if (!b) { el.style.display = "none"; return; }
+  const img = document.getElementById("img");
+  const r = img.getBoundingClientRect();
+  const s = document.getElementById("stage").getBoundingClientRect();
+  el.style.display = "block";
+  el.style.left = (r.left - s.left + b[0] * r.width) + "px";
+  el.style.top = (r.top - s.top + b[1] * r.height) + "px";
+  el.style.width = ((b[2] - b[0]) * r.width) + "px";
+  el.style.height = ((b[3] - b[1]) * r.height) + "px";
+}
+
+function clearBox() {
+  const it = cur(); if (!it) return;
+  if (ann[it.id]) ann[it.id].box = null;
+  drawBox(null);
+}
+
+const imgEl = document.getElementById("img");
+imgEl.addEventListener("mousedown", e => {
+  const r = imgEl.getBoundingClientRect();
+  drawing = { x0: (e.clientX - r.left) / r.width, y0: (e.clientY - r.top) / r.height };
+});
+window.addEventListener("mouseup", e => {
+  if (!drawing) return;
+  const r = imgEl.getBoundingClientRect();
+  const x1 = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+  const y1 = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
+  const box = [Math.min(drawing.x0, x1), Math.min(drawing.y0, y1), Math.max(drawing.x0, x1), Math.max(drawing.y0, y1)];
+  drawing = null;
+  if (box[2] - box[0] < 0.01 || box[3] - box[1] < 0.01) return;
+  const it = cur();
+  ann[it.id] = Object.assign({}, ann[it.id] || {}, { box, annotator, saved_at: new Date().toISOString() });
+  drawBox(box);
+});
+
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  if (e.key === "ArrowRight" && idx < items.length - 1) { idx++; show(); }
+  if (e.key === "ArrowLeft" && idx > 0) { idx--; show(); }
+  if ("12345".includes(e.key)) setLabel(Number(e.key) - 1);
+  if (e.key.toLowerCase() === "u") setLabel(-1);
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveAll(); }
+});
+
+function saveAll() {
+  const out = items.map(it => ({
+    id: it.id, image: it.image, action: it.action, instruction: it.instruction,
+    label: null, conf: null, box: null, annotator,
+    ...(ann[it.id] || {})
+  }));
+  const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `annotations_${annotator}_${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  const labeled = out.filter(v => v.label !== null).length;
+  status(`Saved. Labeled: ${labeled} / ${items.length}`);
+}
+
+function status(s) { document.getElementById("status").textContent = s; }
+</script>
+</body>
+</html>

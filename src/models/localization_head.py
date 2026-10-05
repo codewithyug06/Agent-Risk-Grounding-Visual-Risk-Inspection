@@ -17,7 +17,7 @@ class LocalizationHead(nn.Module):
     Also generates Grad-CAM heatmap for interpretability.
     """
 
-    ASPECT_RATIOS = (0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0)  # w / h
+    ASPECT_RATIOS = (0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0)  # w / h
 
     def __init__(
         self,
@@ -189,6 +189,10 @@ class LocalizationHead(nn.Module):
             raise ValueError(f"Unexpected spatial_embeddings shape: {spatial_embeddings.shape}")
 
         # Process features
+        # Remove the per-sample shared component across cells: raw ViT patch
+        # embeddings are highly similar across positions (cosine ~0.86), which
+        # starves the objectness head of location-specific signal.
+        spatial_embeddings = spatial_embeddings - spatial_embeddings.mean(dim=1, keepdim=True)
         features = self.feature_processor(spatial_embeddings)  # (B, N, D)
 
         # Objectness prediction

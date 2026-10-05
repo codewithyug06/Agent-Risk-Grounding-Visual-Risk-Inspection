@@ -110,6 +110,8 @@ class SentinelLoss(nn.Module):
         giou_weight: float = 1.0,
         l1_weight: float = 0.5,
         obj_weight: float = 1.0,
+        refiner_weight: float = 1.0,
+        refiner_iou_thresh: float = 0.3,
     ):
         super().__init__()
 
@@ -127,6 +129,8 @@ class SentinelLoss(nn.Module):
         # gradient for *where* to look. Falls back to the old post-argmax
         # GIoU/L1 path (below) when those keys are absent, e.g. in unit
         # tests that construct a dummy `predictions` dict by hand.
+        self.refiner_weight = refiner_weight
+        self.refiner_iou_thresh = refiner_iou_thresh
         self.anchor_loc_loss_fn = AnchorMatchedLocalizationLoss(
             giou_weight=giou_weight, l1_weight=l1_weight, obj_weight=obj_weight,
         )
@@ -241,11 +245,16 @@ class SentinelLoss(nn.Module):
             l1_loss = torch.tensor(0.0, device=device)
             obj_loss = torch.tensor(0.0, device=device)
 
+        refiner_loss = torch.tensor(0.0, device=device)
+        if "refine_scores" in predictions:
+            refiner_loss = self._refiner_loss(predictions, targets, device)
+
         # Total loss
         total_loss = (
             self.risk_weight * risk_loss +
             self.category_weight * category_loss +
-            self.localization_weight * loc_loss
+            self.localization_weight * loc_loss +
+            self.refiner_weight * refiner_loss
         )
 
         return {
@@ -256,7 +265,49 @@ class SentinelLoss(nn.Module):
             "giou_loss": giou_loss,
             "l1_loss": l1_loss,
             "obj_loss": obj_loss,
+            "refiner_loss": refiner_loss,
         }
+
+    def _refiner_loss(
+        self,
+        predictions: Dict[str, torch.Tensor],
+        targets: Dict[str, torch.Tensor],
+        device: torch.device,
+    ) -> torch.Tensor:
+        """
+        Second-stage loss on harmful samples with a GT box. Each proposal is
+        scored against its IoU with the GT (quality focal loss); proposals with
+        IoU >= pos_iou get GIoU+L1 regression of their refined box.
+        """
+        image_size = predictions.get("image_size", 224)
+        mask = (targets["risk_label"] == 1) & (targets["has_bbox"] > 0.5)
+        if not mask.any():
+            return torch.tensor(0.0, device=device)
+
+        props = predictions["refine_proposals"][mask]
+        scores = predictions["refine_scores"][mask]
+        boxes = predictions["refine_boxes"][mask]
+        gt = (targets["bbox"].to(device) * image_size)[mask][:, None, :].expand_as(props)
+
+        with torch.no_grad():
+            iou = AnchorMatchedLocalizationLoss._pairwise_iou(props.reshape(-1, 4), gt.reshape(-1, 4))
+            iou = iou.reshape(props.shape[0], props.shape[1])
+            pos = iou >= self.refiner_iou_thresh
+            cls_target = torch.where(pos, iou, torch.zeros_like(iou))
+            reg_weight = torch.where(pos, iou, torch.zeros_like(iou))
+        cls_loss = AnchorMatchedLocalizationLoss._quality_focal_loss(scores, cls_target)
+
+        if pos.any():
+            bp = boxes[pos] / image_size
+            gp = gt[pos] / image_size
+            w = reg_weight[pos]
+            w = w / w.sum().clamp(min=1e-8) * w.numel()
+            giou_each = 1.0 - AnchorMatchedLocalizationLoss._giou_each(bp, gp)
+            l1_each = (bp - gp).abs().mean(dim=1)
+            reg_loss = (w * (self.giou_weight * giou_each + self.l1_weight * l1_each)).mean()
+        else:
+            reg_loss = torch.tensor(0.0, device=device)
+        return cls_loss + reg_loss
 
     def _compute_giou_loss(
         self,
@@ -488,6 +539,37 @@ class AnchorMatchedLocalizationLoss(nn.Module):
         return (1 - giou).mean()
 
     @staticmethod
+    def _giou_each(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """Per-box GIoU for matched xyxy tensors (N, 4) -> (N,)."""
+        x1_i = torch.max(pred[:, 0], target[:, 0])
+        y1_i = torch.max(pred[:, 1], target[:, 1])
+        x2_i = torch.min(pred[:, 2], target[:, 2])
+        y2_i = torch.min(pred[:, 3], target[:, 3])
+        inter = (x2_i - x1_i).clamp(min=0) * (y2_i - y1_i).clamp(min=0)
+        area_p = (pred[:, 2] - pred[:, 0]).clamp(min=0) * (pred[:, 3] - pred[:, 1]).clamp(min=0)
+        area_t = (target[:, 2] - target[:, 0]).clamp(min=0) * (target[:, 3] - target[:, 1]).clamp(min=0)
+        union = area_p + area_t - inter
+        iou = inter / union.clamp(min=1e-8)
+        x1_c = torch.min(pred[:, 0], target[:, 0])
+        y1_c = torch.min(pred[:, 1], target[:, 1])
+        x2_c = torch.max(pred[:, 2], target[:, 2])
+        y2_c = torch.max(pred[:, 3], target[:, 3])
+        area_c = (x2_c - x1_c).clamp(min=1e-8) * (y2_c - y1_c).clamp(min=1e-8)
+        return iou - (area_c - union) / area_c
+
+    @staticmethod
+    def _pairwise_iou(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+        """Element-wise IoU between matched xyxy box tensors of shape (N, 4)."""
+        x1 = torch.max(a[:, 0], b[:, 0])
+        y1 = torch.max(a[:, 1], b[:, 1])
+        x2 = torch.min(a[:, 2], b[:, 2])
+        y2 = torch.min(a[:, 3], b[:, 3])
+        inter = (x2 - x1).clamp(min=0) * (y2 - y1).clamp(min=0)
+        area_a = (a[:, 2] - a[:, 0]).clamp(min=0) * (a[:, 3] - a[:, 1]).clamp(min=0)
+        area_b = (b[:, 2] - b[:, 0]).clamp(min=0) * (b[:, 3] - b[:, 1]).clamp(min=0)
+        return inter / (area_a + area_b - inter).clamp(min=1e-8)
+
+    @staticmethod
     def _quality_focal_loss(logits: torch.Tensor, target: torch.Tensor, alpha: float = 0.75, gamma: float = 2.0) -> torch.Tensor:
         """
         Varifocal-style loss with soft (IoU) targets. Positives are weighted by
@@ -657,4 +739,6 @@ def create_loss_function(config: Dict) -> SentinelLoss:
         giou_weight=loss_config.get("giou_weight", 1.0),
         l1_weight=loss_config.get("l1_weight", 0.5),
         obj_weight=loss_config.get("obj_weight", 1.0),
+        refiner_weight=loss_config.get("refiner_weight", 1.0),
+        refiner_iou_thresh=loss_config.get("refiner_iou_thresh", 0.3),
     )

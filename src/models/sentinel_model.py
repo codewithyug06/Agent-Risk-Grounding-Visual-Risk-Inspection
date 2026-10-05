@@ -10,6 +10,7 @@ from .frame_encoder import FrameEncoder, create_frame_encoder
 from .temporal_fusion import TemporalFusion, create_temporal_fusion
 from .risk_head import RiskHead, create_risk_head
 from .localization_head import LocalizationHead, create_localization_head
+from .box_refiner import BoxRefiner
 from ..utils.checkpoint import load_checkpoint
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,22 @@ class SentinelModel(nn.Module):
         self.risk_head = create_risk_head(config)
         self.localization_head = create_localization_head(config)
 
+        refiner_cfg = config.get("refiner", None)
+        if refiner_cfg is not None and refiner_cfg.get("enabled", True):
+            self.refiner = BoxRefiner(
+                embed_dim=config.get("embed_dim", 384),
+                hidden=refiner_cfg.get("hidden", 256),
+                pool=refiner_cfg.get("pool", 7),
+                num_proposals=refiner_cfg.get("num_proposals", 30),
+                nms_iou=refiner_cfg.get("nms_iou", 0.5),
+                image_size=config.get("image_size", 224),
+                feature_stride=config.get("localization", {}).get("feature_stride", 16),
+                jitter_copies=refiner_cfg.get("jitter_copies", 3),
+                jitter_frac=refiner_cfg.get("jitter_frac", 0.15),
+            )
+        else:
+            self.refiner = None
+
         # Category names
         self.category_names = [
             "destructive",
@@ -64,7 +81,11 @@ class SentinelModel(nn.Module):
         if hasattr(self.frame_encoder, "set_epoch"):
             self.frame_encoder.set_epoch(epoch)
 
-    def forward(self, frame_window: torch.Tensor) -> Dict[str, Any]:
+    def forward(
+        self,
+        frame_window: torch.Tensor,
+        gt_bbox_pixel: Optional[torch.Tensor] = None,
+    ) -> Dict[str, Any]:
         """
         Full forward pass.
 
@@ -130,6 +151,16 @@ class SentinelModel(nn.Module):
             "heatmap": None,  # Generated on demand via generate_heatmap()
             "confidence": confidence,                          # (B,)
         }
+        if self.refiner is not None and not torch.jit.is_tracing():
+            # GT jitter proposals are added only in training, when gt_bbox_pixel is given.
+            ref = self.refiner(
+                spatial_fused,
+                loc_output["bbox_pred"],
+                loc_output["anchor_logits"][..., 0],
+                gt_bbox_pixel if self.training else None,
+            )
+            out.update(ref)
+            out["bbox_refined"] = (ref["bbox_refined_pixel"] / self.image_size).clamp(0, 1)
         if not torch.jit.is_tracing():
             # Constant (non-data-dependent) entries break ONNX tracing, so
             # they are attached only for training/eval callers such as
