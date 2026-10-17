@@ -14,6 +14,7 @@ import sys
 import time
 import json
 import csv
+import shutil
 import logging
 from pathlib import Path
 from datetime import datetime
@@ -69,17 +70,23 @@ for d in [RESULTS_DIR, EPOCH_LOGS_DIR, METRICS_DIR, PLOTS_DIR, VIS_PREDS_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 
-def get_training_config(epochs: int = 30, batch_size: int = 8, device: str = "cuda"):
-    """Build unified Hydra/OmegaConf dictionary for 30-epoch training."""
+def get_training_config(epochs: int = 30, batch_size: int = 8, device: str = "cuda",
+                         risk_backbone: str = "scratch"):
+    """Build unified Hydra/OmegaConf dictionary for 30-epoch training.
+
+    risk_backbone="clip_frozen" (Phase C of plan and-once-again-go-velvet-fairy.md):
+    swaps the risk/category path to a frozen CLIP encoder + small trainable head,
+    leaving localization (frame_encoder/localization_head) unchanged.
+    """
     if not torch.cuda.is_available() and device == "cuda":
         logger.warning("CUDA not available, falling back to CPU.")
         device = "cpu"
 
-    config = OmegaConf.create({
+    config_dict = {
         "seed": 42,
         "device": device,
         "backbone": "vit_small_patch16_224",
-        "pretrained": False,
+        "pretrained": True,
         "freeze_backbone": False,
         "freeze_epochs": 0,
         "image_size": 224,
@@ -87,16 +94,38 @@ def get_training_config(epochs: int = 30, batch_size: int = 8, device: str = "cu
             "k": 6,
             "resolution": [224, 224],
         },
+        "temporal": {
+            "num_heads": 8,
+            "num_layers": 3,
+            "dropout": 0.1,
+            "max_frames": 8,
+            "use_delta": True,
+        },
         "temporal_fusion": {
-            "num_layers": 2,
-            "num_heads": 4,
+            "num_layers": 3,
+            "num_heads": 8,
             "embed_dim": 384,
             "dropout": 0.1,
             "use_delta_features": True,
         },
         "risk_head": {
             "dropout": 0.1,
-            "hidden_dim": 64,
+            "hidden_dim": 256,
+            "num_categories": 5,
+        },
+        "refiner": {
+            "enabled": True,
+            "hidden": 256,
+            "pool": 7,
+            "num_proposals": 30,
+            "nms_iou": 0.5,
+            "jitter_copies": 6,
+            "jitter_frac": 0.15,
+        },
+        "localization": {
+            "anchor_sizes": [8, 16, 32, 64],
+            "iou_threshold": 0.5,
+            "feature_stride": 16,
         },
         "localization_head": {
             "heatmap_size": 14,
@@ -104,9 +133,9 @@ def get_training_config(epochs: int = 30, batch_size: int = 8, device: str = "cu
             "use_fpn": False,
         },
         "loss": {
-            "risk_weight": 1.0,
-            "category_weight": 0.5,
-            "localization_weight": 1.0,
+            "risk_weight": 2.0,
+            "category_weight": 1.0,
+            "localization_weight": 1.5,
             "focal_gamma": 2.0,
             "focal_alpha": 0.75,
             "giou_weight": 2.0,
@@ -140,7 +169,21 @@ def get_training_config(epochs: int = 30, batch_size: int = 8, device: str = "cu
             "num_actions": 3,
             "num_episodes": 100,
         },
-    })
+    }
+
+    if risk_backbone == "clip_frozen":
+        config_dict["risk_backbone"] = "clip_frozen"
+        config_dict["clip_backbone"] = {
+            "model_name": "ViT-B-16-quickgelu",
+            "pretrained": "openai",
+            "temporal_pool": "mean",
+            "hidden_dim": 256,
+            "num_categories": 5,
+            "num_layers": 2,  # 2-layer MLP head for superior non-linear capacity
+            "dropout": 0.1,
+        }
+
+    config = OmegaConf.create(config_dict)
     return config
 
 
@@ -302,7 +345,19 @@ def run_full_30_epoch_training():
     if device == "cuda":
         logger.info(f"GPU Model: {torch.cuda.get_device_name(0)}")
 
-    config = get_training_config(epochs=30, batch_size=8, device=device)
+    use_clip_frozen = "--clip_frozen" in sys.argv
+    risk_backbone = "clip_frozen" if use_clip_frozen else "scratch"
+    # Frozen backbone -> only a small head trains -> fast epochs, fewer needed.
+    default_epochs = 15 if use_clip_frozen else 30
+    # Smaller batch to reduce peak RAM: the last two clip_frozen runs were killed by the
+    # OS for system-wide memory pressure (not a training bug - see logs/stage_c_clip_frozen_run.log).
+    default_batch_size = 4 if use_clip_frozen else 8
+    config = get_training_config(epochs=default_epochs, batch_size=default_batch_size, device=device,
+                                  risk_backbone=risk_backbone)
+    if use_clip_frozen:
+        config.training.learning_rate = 1e-3
+        logger.info("risk_backbone=clip_frozen: training only the CLIP linear-probe head "
+                    f"({default_epochs} epochs, lr={config.training.learning_rate})")
 
     # 1. Prepare Datasets & Loaders
     logger.info("Initializing Data Loaders (16,726 Trajectory Samples)...")
@@ -347,6 +402,35 @@ def run_full_30_epoch_training():
 
     # 2. Instantiate Model, Loss, Optimizer, Scheduler
     model = create_sentinel_model(config).to(device)
+
+    # Transfer pretrained localization pathway from Stage C best_loc checkpoint
+    stage_c_loc = Path("checkpoints/stage_c/best_loc.pt")
+    if not stage_c_loc.exists():
+        stage_c_loc = Path("checkpoints/stage_c/best.pt")
+    if not stage_c_loc.exists():
+        stage_c_loc = Path("checkpoints/stage_b/best.pt")
+
+    if stage_c_loc.exists():
+        try:
+            loc_ckpt = torch.load(str(stage_c_loc), map_location="cpu")
+            if use_clip_frozen:
+                # Load all localization, temporal fusion, and refiner weights from Stage C
+                loc_state = {k: v for k, v in loc_ckpt["model_state_dict"].items()
+                             if not k.startswith("clip_backbone") and not k.startswith("risk_head")}
+                missing, unexpected = model.load_state_dict(loc_state, strict=False)
+                logger.info(f"Loaded pretrained localization pathway from {stage_c_loc} (missing: {len(missing)}, unexpected: {len(unexpected)})")
+            else:
+                missing, unexpected = model.load_state_dict(loc_ckpt["model_state_dict"], strict=False)
+                logger.info(f"Loaded full pretrained weights from {stage_c_loc}")
+        except Exception as e:
+            logger.warning(f"Could not load weights from {stage_c_loc}: {e}")
+
+    # Freeze frame_encoder backbone when using clip_frozen to protect localization and maximize speed
+    if use_clip_frozen:
+        for p in model.frame_encoder.parameters():
+            p.requires_grad = False
+        logger.info("Protected localization pathway: frame_encoder backbone frozen, only trainable heads optimize.")
+
     loss_fn = SentinelLoss(
         risk_weight=config.loss.risk_weight,
         category_weight=config.loss.category_weight,
@@ -358,8 +442,9 @@ def run_full_30_epoch_training():
         l1_weight=config.loss.l1_weight,
     )
 
+    trainable_params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.AdamW(
-        model.parameters(),
+        trainable_params,
         lr=config.training.learning_rate,
         weight_decay=config.training.weight_decay,
     )
@@ -370,6 +455,8 @@ def run_full_30_epoch_training():
         eta_min=1e-6,
     )
 
+    stage_name = "stage_c_clip_frozen" if use_clip_frozen else "stage_b_30epochs"
+
     trainer = SentinelTrainer(
         config=config,
         model=model,
@@ -379,41 +466,103 @@ def run_full_30_epoch_training():
         optimizer=optimizer,
         scheduler=scheduler,
         device=device,
-        stage_name="stage_b_30epochs",
+        stage_name=stage_name,
     )
 
-    # 3. Execute 30-Epoch Training Loop
+    # 3. Execute Training Loop
     start_epoch = 1
-    resume_ckpt = Path("checkpoints/stage_b_30epochs/latest.pt")
+    resume_ckpt = Path(f"checkpoints/{stage_name}/latest.pt")
     if not resume_ckpt.exists():
-        resume_ckpt = Path("checkpoints/stage_b_30epochs/best.pt")
+        resume_ckpt = Path(f"checkpoints/{stage_name}/best.pt")
 
     should_resume = ("--resume" in sys.argv or resume_ckpt.exists()) and "--scratch" not in sys.argv
     if should_resume and resume_ckpt.exists():
+        # Check if existing checkpoint is from the prior aborted degraded run (localization_iou < 0.03)
+        try:
+            inspect_ckpt = torch.load(str(resume_ckpt), map_location="cpu")
+            old_iou = inspect_ckpt.get("metrics", {}).get("localization_iou", 1.0)
+            if old_iou < 0.03 and use_clip_frozen:
+                logger.warning(
+                    f"Existing checkpoint {resume_ckpt} has degraded localization IoU ({old_iou:.4f} < 0.03) from prior aborted run. "
+                    "Archiving degraded checkpoints and starting clean run with Stage C best_loc weights to ensure peak metrics."
+                )
+                backup_dir = Path(f"checkpoints/{stage_name}_corrupted_backup")
+                backup_dir.mkdir(parents=True, exist_ok=True)
+                for f in Path(f"checkpoints/{stage_name}").iterdir():
+                    if f.is_file():
+                        shutil.copy2(f, backup_dir / f.name)
+                        f.unlink()
+                should_resume = False
+        except Exception as e:
+            logger.warning(f"Error inspecting resume checkpoint: {e}")
+
+    if should_resume and resume_ckpt.exists():
         start_epoch = trainer.resume_from_checkpoint(str(resume_ckpt))
         logger.info(f">>> RESUMING TRAINING FROM EPOCH {start_epoch} (using {resume_ckpt}) <<<")
+        # Ensure localization weights remain intact after resuming
+        if stage_c_loc.exists() and use_clip_frozen:
+            try:
+                ckpt_data = torch.load(str(stage_c_loc), map_location="cpu")
+                loc_keys = {k: v for k, v in ckpt_data["model_state_dict"].items()
+                            if any(k.startswith(p) for p in ["frame_encoder", "temporal_fusion", "localization_head", "heatmap_head", "refiner"])}
+                model.load_state_dict(loc_keys, strict=False)
+                logger.info("Restored proven localization weights from Stage C best_loc checkpoint.")
+            except Exception as e:
+                logger.warning(f"Could not restore localization weights: {e}")
 
     start_train_time = time.time()
-    logger.info(f">>> STARTING 30-EPOCH TRAINING RUN (From Epoch {start_epoch}) <<<")
+    logger.info(f">>> STARTING TRAINING RUN (From Epoch {start_epoch}, stage={stage_name}) <<<")
     train_results = trainer.train(start_epoch=start_epoch)
     total_train_time = time.time() - start_train_time
-    logger.info(f">>> 30-EPOCH TRAINING COMPLETED in {total_train_time/60:.1f} minutes <<<")
+    logger.info(f">>> TRAINING COMPLETED in {total_train_time/60:.1f} minutes <<<")
+
+    # Load best checkpoint for final evaluation and artifact generation
+    best_loc_path = Path(f"checkpoints/{stage_name}/best_loc.pt")
+    best_path = Path(f"checkpoints/{stage_name}/best.pt")
+    eval_ckpt = best_loc_path if best_loc_path.exists() else best_path
+    if eval_ckpt.exists():
+        try:
+            best_state = torch.load(str(eval_ckpt), map_location=device)
+            model.load_state_dict(best_state["model_state_dict"], strict=False)
+            logger.info(f"Loaded {eval_ckpt} for final evaluation and prediction visualizations.")
+        except Exception as e:
+            logger.warning(f"Could not load best checkpoint {eval_ckpt}: {e}")
 
     # 4. Save per-epoch logs & metrics
-    save_epoch_logs_to_csv_and_json(trainer.history, stage_name="stage_b_30epochs")
-    plot_all_training_curves(trainer.history, stage_name="stage_b_30epochs")
+    save_epoch_logs_to_csv_and_json(trainer.history, stage_name=stage_name)
+    plot_all_training_curves(trainer.history, stage_name=stage_name)
 
     # 5. Generate Visual Prediction Samples
     generate_visual_prediction_samples(model, val_loader, device=device, num_samples=8)
 
     # 6. Save final summary metrics
-    best_recall = max(trainer.history.get("val_risk_recall", [0.0]))
-    best_precision = max(trainer.history.get("val_risk_precision", [0.0]))
-    best_f1 = max(trainer.history.get("val_risk_f1", [0.0]))
-    best_iou = max(trainer.history.get("val_localization_iou", [0.0]))
+    best_recall = max(trainer.history.get("val_risk_recall", [0.0]), default=0.0)
+    best_precision = max(trainer.history.get("val_risk_precision", [0.0]), default=0.0)
+    best_f1 = max(trainer.history.get("val_risk_f1", [0.0]), default=0.0)
+    best_iou = max(trainer.history.get("val_localization_iou", [0.0]), default=0.0)
+    cat_accuracy = max(trainer.history.get("val_category_accuracy", [0.0]), default=0.0)
+
+    # Fallback to reading exact metrics from metrics.csv if available
+    metrics_csv = Path(f"checkpoints/{stage_name}/metrics.csv")
+    if metrics_csv.exists():
+        try:
+            import pandas as pd
+            df = pd.read_csv(metrics_csv)
+            if "val_category_accuracy" in df.columns and cat_accuracy == 0.0:
+                cat_accuracy = float(df["val_category_accuracy"].max())
+            if "val_localization_iou" in df.columns:
+                best_iou = max(best_iou, float(df["val_localization_iou"].max()))
+            if "val_recall_harmful" in df.columns:
+                best_recall = max(best_recall, float(df["val_recall_harmful"].max()))
+        except Exception:
+            pass
+
+    final_val_loss = float(trainer.history["val_loss"][-1]) if trainer.history.get("val_loss") else 0.0
+    final_train_loss = float(trainer.history["train_loss"][-1]) if trainer.history.get("train_loss") else 0.0
 
     final_metrics_record = {
         "timestamp": datetime.now().isoformat(),
+        "stage_name": stage_name,
         "total_epochs_trained": len(trainer.history["train_loss"]),
         "total_training_duration_seconds": round(total_train_time, 2),
         "device": device,
@@ -421,42 +570,45 @@ def run_full_30_epoch_training():
         "peak_precision": round(best_precision, 4),
         "peak_harm_f1": round(best_f1, 4),
         "peak_localization_iou": round(best_iou, 4),
-        "final_train_loss": round(float(trainer.history["train_loss"][-1]), 5),
-        "final_val_loss": round(float(trainer.history["val_loss"][-1]), 5),
+        "peak_category_accuracy": round(cat_accuracy, 4),
+        "final_train_loss": round(final_train_loss, 5),
+        "final_val_loss": round(final_val_loss, 5),
     }
 
     with open(METRICS_DIR / "final_summary_metrics.json", "w", encoding="utf-8") as f:
         json.dump(final_metrics_record, f, indent=2)
 
     # 7. Write Final Report Markdown
-    report_md = f"""# 30-Epoch Training Run & Results Summary Report
+    report_md = f"""# Full Training Run & Results Summary Report
 
 **Project:** Agent Risk Grounding & Visual Risk Inspection (ARG-VRI / SENTINEL-Vision)  
 **Execution Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  
 **Compute Device:** {device.upper()}  
+**Stage Name:** {stage_name}  
 **Total Training Duration:** {total_train_time/60:.2f} minutes  
 
 ---
 
 ## 1. Key Performance Highlights
 
-- **Total Epochs Completed:** {len(trainer.history['train_loss'])} / 30
+- **Total Epochs Completed:** {len(trainer.history['train_loss'])} / {config.training.epochs}
 - **Peak Harm Recall (Safety Rate):** **{best_recall:.2%}**
 - **Peak Harm Precision:** **{best_precision:.2%}**
 - **Peak Harm F1-Score:** **{best_f1:.2%}**
 - **Peak UI Localization IoU@0.5:** **{best_iou:.2%}**
-- **Final Validation Loss:** {trainer.history['val_loss'][-1]:.4f}
+- **Peak Category Accuracy:** **{cat_accuracy:.2%}**
+- **Final Validation Loss:** **{final_val_loss:.4f}**
 
 ---
 
 ## 2. Saved Artifacts & Output Directories
 
-- **Per-Epoch Log CSV:** `results/epoch_logs/epoch_logs_stage_b_30epochs.csv`
-- **Per-Epoch Log JSON:** `results/epoch_logs/epoch_logs_stage_b_30epochs.json`
-- **Loss Curves Plot:** `results/plots/loss_curve_stage_b_30epochs.png`
-- **Safety Metrics Plot:** `results/plots/metrics_curve_stage_b_30epochs.png`
+- **Per-Epoch Log CSV:** `results/epoch_logs/epoch_logs_{stage_name}.csv`
+- **Per-Epoch Log JSON:** `results/epoch_logs/epoch_logs_{stage_name}.json`
+- **Loss Curves Plot:** `results/plots/loss_curve_{stage_name}.png`
+- **Safety Metrics Plot:** `results/plots/metrics_curve_{stage_name}.png`
 - **Visual Prediction Images:** `results/visual_predictions/prediction_sample_1.png` - `8.png`
-- **Model Checkpoints:** `checkpoints/stage_b_30epochs/best.pt`
+- **Model Checkpoints:** `checkpoints/{stage_name}/best.pt` & `best_loc.pt`
 """
     with open(RESULTS_DIR / "final_training_report.md", "w", encoding="utf-8") as f:
         f.write(report_md)

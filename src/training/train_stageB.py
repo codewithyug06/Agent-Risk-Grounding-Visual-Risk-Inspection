@@ -71,6 +71,8 @@ def train_stage_b(config: DictConfig) -> DictConfig:
     config.stage_name = "stage_b"
     if "num_epochs" in stage_config:
         config.training.epochs = stage_config["num_epochs"]
+    if "learning_rate" in stage_config:
+        config.training.learning_rate = stage_config["learning_rate"]
 
     device = config.get("device", "cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
@@ -131,12 +133,13 @@ def train_stage_b(config: DictConfig) -> DictConfig:
         dataset_stats=dataset_stats,
     )
 
+    start_epoch = 1
     resume_path = config.get("resume_from", None)
     if resume_path:
         start_epoch = trainer.resume_from_checkpoint(resume_path)
         logger.info(f"Resumed from epoch {start_epoch}")
 
-    results = trainer.train()
+    results = trainer.train(start_epoch=start_epoch)
 
     logger.info("Stage B training completed!")
     logger.info(f"Best val_recall_harmful: {results['best_metric']:.4f}")

@@ -7,17 +7,22 @@ env/
 venv/
 .venv/
 ENV/
+*.egg-info/
 
 .pytest_cache/
 .coverage
 htmlcov/
 pytest_output.txt
+.ruff_cache/
+.mypy_cache/
+.claude/
 
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
 
+# Large datasets & caches
 data/Mind2Web/
 data/Multimodal-Mind2Web/
 data/Multimodal-Mind2Web-v2/
@@ -26,8 +31,13 @@ data/ScreenSpot-v2/
 data/AgentTrek/
 data/visualwebarena/
 data/MisActBench/
+data/clip_vit_b16_hf/
+data/synthetic_*/
+data/synthetic_v*/
 data/processed/frames/
 data/processed/frames_misactbench/
+data/processed/synthetic/
+data/processed/synthetic_*/
 data/processed/*.jsonl
 data/processed/_samples.jsonl
 data/Dataset_Download.py
@@ -36,13 +46,17 @@ HF_Cache/
 *.tar.gz
 *.zip
 
+# Temporary scripts and logs
 scripts/_*.py
 scripts/clean_emojis.py
 scripts/smoke_test_real_data.py
 notebooks/sample_window.png
 *.tmp
 *.log
+logs/
+logs_*.txt
 
+# Model checkpoints (prevent multi-GB binary blobs from git)
 checkpoints/*
 checkpoints_*/
 !checkpoints/.gitkeep
@@ -50,7 +64,6 @@ checkpoints_*/
 
 # Evaluation outputs and hydra logs
 outputs/
-results/
 
 # Local incident logs & runs
 wandb/

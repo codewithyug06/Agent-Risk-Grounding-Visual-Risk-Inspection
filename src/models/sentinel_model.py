@@ -11,6 +11,8 @@ from .temporal_fusion import TemporalFusion, create_temporal_fusion
 from .risk_head import RiskHead, create_risk_head
 from .localization_head import LocalizationHead, create_localization_head
 from .box_refiner import BoxRefiner
+from .heatmap_head import HeatmapHead
+from .clip_backbone import ClipFrozenBackbone, ClipLinearRiskHead
 from ..utils.checkpoint import load_checkpoint
 
 logger = logging.getLogger(__name__)
@@ -43,8 +45,36 @@ class SentinelModel(nn.Module):
         # Build components
         self.frame_encoder = create_frame_encoder(config)
         self.temporal_fusion = create_temporal_fusion(config)
-        self.risk_head = create_risk_head(config)
         self.localization_head = create_localization_head(config)
+
+        # risk_backbone: "scratch" (default) keeps the existing from-scratch risk path
+        # unchanged; "clip_frozen" replaces it with a frozen pretrained CLIP encoder +
+        # small trainable head (see plan: and-once-again-go-velvet-fairy.md). Localization
+        # always uses frame_encoder/localization_head regardless of this flag.
+        self.risk_backbone_mode = config.get("risk_backbone", "scratch")
+        if self.risk_backbone_mode == "clip_frozen":
+            clip_cfg = config.get("clip_backbone", {})
+            self.clip_backbone = ClipFrozenBackbone(
+                model_name=clip_cfg.get("model_name", "ViT-B-16-quickgelu"),
+                pretrained=clip_cfg.get("pretrained", "openai"),
+                temporal_pool=clip_cfg.get("temporal_pool", "mean"),
+            )
+            self.risk_head = ClipLinearRiskHead(
+                embed_dim=self.clip_backbone.embed_dim,
+                hidden_dim=clip_cfg.get("hidden_dim", 256),
+                num_categories=clip_cfg.get("num_categories", 5),
+                num_layers=clip_cfg.get("num_layers", 0),
+                dropout=clip_cfg.get("dropout", 0.1),
+            )
+        else:
+            self.clip_backbone = None
+            self.risk_head = create_risk_head(config)
+
+        self.heatmap_head = HeatmapHead(
+            embed_dim=config.get("embed_dim", 384),
+            feature_stride=config.get("localization", {}).get("feature_stride", 16),
+            image_size=config.get("image_size", 224),
+        )
 
         refiner_cfg = config.get("refiner", None)
         if refiner_cfg is not None and refiner_cfg.get("enabled", True):
@@ -97,11 +127,8 @@ class SentinelModel(nn.Module):
         """
         B, k, C, H, W = frame_window.shape
 
-        # Frame encoding: (B, k, N_patches, D)
-        frame_embeddings = self.frame_encoder(frame_window)
-
-        # Get spatial embeddings for localization: (B, k, H_grid, W_grid, D)
-        spatial_embeddings = self.frame_encoder.get_spatial_embeddings(frame_window)
+        # Single-pass frame encoding: patches, spatial grid, and CLS token
+        frame_embeddings, spatial_embeddings, cls_token = self.frame_encoder.extract_all(frame_window)
 
         # Temporal fusion: (B, N_patches, D)
         fused = self.temporal_fusion(frame_embeddings)
@@ -110,9 +137,16 @@ class SentinelModel(nn.Module):
         # Average across time for spatial features
         spatial_fused = spatial_embeddings.mean(dim=1)  # (B, H_grid, W_grid, D)
 
-        # Risk head
-        cls_token = self.frame_encoder.get_cls_token(frame_window)
-        risk_output = self.risk_head(fused, cls_token)
+        # Heatmap head (centerness and sub-pixel offsets)
+        heat_logits, heat_offsets = self.heatmap_head(spatial_fused)
+
+        # Risk head: either the from-scratch dual-pathway head on frame_encoder features,
+        # or (risk_backbone=clip_frozen) a frozen CLIP embedding + small trainable head.
+        if self.clip_backbone is not None:
+            clip_pooled = self.clip_backbone(frame_window)
+            risk_output = self.risk_head(clip_pooled)
+        else:
+            risk_output = self.risk_head(fused, cls_token)
 
         # Localization head
         loc_output = self.localization_head(spatial_fused)
@@ -139,18 +173,24 @@ class SentinelModel(nn.Module):
             "bbox": loc_output["bbox"],                        # (B, 4) normalized
             "bbox_pixel": loc_output["bbox_pixel"],            # (B, 4) pixels
             "objectness": loc_output["objectness_max"],        # (B,)
-            # Raw per-anchor grids, pre-argmax-selection. The post-argmax
-            # "bbox" above is not usefully trainable end-to-end (argmax over
-            # which anchor/location to use has zero gradient — only the box
-            # shape at whatever location was already selected gets a
-            # gradient signal, never *where* to look). These raw grids let a
-            # proper anchor-IoU-matched loss (AnchorMatchedLocalizationLoss
-            # in src/training/losses.py) supervise anchor selection too.
+            # Raw per-anchor grids, pre-argmax-selection.
             "bbox_pred_grid": loc_output["bbox_pred"],         # (B, H, W, A, 4) pixels
             "objectness_logits_grid": loc_output["anchor_logits"][..., 0],  # (B, H, W, A)
             "heatmap": None,  # Generated on demand via generate_heatmap()
             "confidence": confidence,                          # (B,)
+            "heat_logits": heat_logits,
+            "heat_offsets": heat_offsets,
         }
+        point_pixel = None
+        if not torch.jit.is_tracing():
+            point_pixel = self.heatmap_head.decode_point(heat_logits.detach(), heat_offsets.detach())
+            out["point_pixel"] = point_pixel
+            # Constant (non-data-dependent) entries break ONNX tracing, so
+            # they are attached only for training/eval callers such as
+            # SentinelLoss, which needs the anchor geometry for matching.
+            out["anchors"] = self.localization_head.anchors
+            out["image_size"] = self.image_size
+
         if self.refiner is not None and not torch.jit.is_tracing():
             # GT jitter proposals are added only in training, when gt_bbox_pixel is given.
             ref = self.refiner(
@@ -160,13 +200,11 @@ class SentinelModel(nn.Module):
                 gt_bbox_pixel if self.training else None,
             )
             out.update(ref)
+            out["bbox_stage1"] = out["bbox"]
+            out["bbox_pixel_stage1"] = out["bbox_pixel"]
             out["bbox_refined"] = (ref["bbox_refined_pixel"] / self.image_size).clamp(0, 1)
-        if not torch.jit.is_tracing():
-            # Constant (non-data-dependent) entries break ONNX tracing, so
-            # they are attached only for training/eval callers such as
-            # SentinelLoss, which needs the anchor geometry for matching.
-            out["anchors"] = self.localization_head.anchors
-            out["image_size"] = self.image_size
+            out["bbox"] = out["bbox_refined"]
+            out["bbox_pixel"] = ref["bbox_refined_pixel"]
         return out
 
     def predict(self, frames: List[Image.Image]) -> Dict[str, Any]:
@@ -546,6 +584,12 @@ class SentinelModel(nn.Module):
         """Unfreeze frame encoder backbone."""
         for param in self.frame_encoder.backbone.parameters():
             param.requires_grad = True
+        if hasattr(self.frame_encoder.backbone, "set_grad_checkpointing"):
+            try:
+                self.frame_encoder.backbone.set_grad_checkpointing(True)
+                logger.info("Gradient checkpointing enabled on backbone")
+            except Exception as e:
+                logger.warning(f"Could not enable gradient checkpointing: {e}")
         logger.info("Frame encoder backbone unfrozen")
 
 

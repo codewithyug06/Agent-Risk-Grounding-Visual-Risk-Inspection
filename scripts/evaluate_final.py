@@ -78,7 +78,7 @@ def main():
             for i in torch.nonzero(mask).flatten().tolist():
                 gt = gt_all[i:i + 1]
                 refined.append(iou_pair(out["bbox_refined_pixel"][i:i + 1], gt).item())
-                argmax.append(iou_pair(out["bbox_pixel"][i:i + 1], gt).item())
+                argmax.append(iou_pair(out.get("bbox_pixel_stage1", out["bbox_pixel"])[i:i + 1], gt).item())
                 cand = iou_pair(grid[i], gt.expand(grid.shape[1], 4))
                 oracle.append(cand.max().item())
                 props = out["refine_proposals"][i]

@@ -1,0 +1,38 @@
+{
+  "checkpoint": "checkpoints/stage_c_clip_frozen/best.pt",
+  "threshold": 0.0839,
+  "threshold_rule": "recall>=0.90 reached",
+  "val": {
+    "n": 258,
+    "harmful": 79,
+    "recall": 1.0,
+    "precision": 0.3062,
+    "auprc": 0.4419
+  },
+  "test": {
+    "n": 347,
+    "harmful": 82,
+    "recall": 0.9878,
+    "precision": 0.2368,
+    "fpr": 0.9849,
+    "auprc": 0.226,
+    "ci95": {
+      "recall": [
+        0.9571,
+        1.0
+      ],
+      "precision": [
+        0.1897,
+        0.3047
+      ],
+      "fpr": [
+        0.9551,
+        1.0
+      ],
+      "auprc": [
+        0.1781,
+        0.3238
+      ]
+    }
+  }
+}

@@ -167,6 +167,59 @@ class FrameEncoder(nn.Module):
 
         return features
 
+    def extract_all(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+        """
+        Extract patch embeddings, spatial grid embeddings, and CLS token in a SINGLE
+        backbone forward pass, avoiding redundant 3x ViT execution.
+
+        Returns:
+            (patch_features, spatial_features, cls_token)
+            - patch_features: (B, k, N_patches, D)
+            - spatial_features: (B, k, H_grid, W_grid, D)
+            - cls_token: (B, k, D) or None
+        """
+        has_time_dim = x.dim() == 5
+        if has_time_dim:
+            B, k, C, H, W = x.shape
+            x_flat = x.view(B * k, C, H, W)
+        else:
+            B = x.shape[0]
+            k = 1
+            x_flat = x
+
+        features = self.backbone.forward_features(x_flat)
+        if isinstance(features, dict):
+            features = features.get("x", features.get("pre_logits", features))
+
+        cls_token = None
+        if features.dim() == 3 and features.shape[1] == self.num_patches + 1:
+            cls_token = features[:, 0, :]
+            patch_features = features[:, 1:, :]
+        elif features.dim() == 4:
+            B_f, C_f, H_f, W_f = features.shape
+            patch_features = features.flatten(2).transpose(1, 2)
+        else:
+            patch_features = features
+
+        if self.projection is not None:
+            patch_features = self.projection(patch_features)
+            if cls_token is not None:
+                cls_token = self.projection(cls_token)
+
+        H_grid, W_grid = self.patch_grid
+        D = patch_features.shape[-1]
+
+        if has_time_dim:
+            patch_out = patch_features.view(B, k, self.num_patches, D)
+            spatial_out = patch_features.view(B, k, H_grid, W_grid, D)
+            cls_out = cls_token.view(B, k, -1) if cls_token is not None else None
+        else:
+            patch_out = patch_features
+            spatial_out = patch_features.view(B, H_grid, W_grid, D)
+            cls_out = cls_token
+
+        return patch_out, spatial_out, cls_out
+
     def _forward_vit(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass for ViT-based models."""
         # timm ViT forward_features returns (B, N_patches+1, D) with CLS token

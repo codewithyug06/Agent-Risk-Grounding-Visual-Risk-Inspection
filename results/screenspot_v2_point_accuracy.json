@@ -1,0 +1,12 @@
+{
+  "checkpoint": "checkpoints/stage_c/best_loc.pt",
+  "benchmark": "ScreenSpot-v2 (processed test split rows)",
+  "n": 192,
+  "point_in_box_accuracy": 0.0938,
+  "point_in_box_ci95": [
+    0.0833,
+    0.1019
+  ],
+  "mean_iou": 0.0476,
+  "note": "Published large-VLM point accuracy on ScreenSpot-v2 is 88-92%."
+}

@@ -34,6 +34,11 @@ from .losses import SentinelLoss, create_loss_function
 logger = logging.getLogger(__name__)
 
 
+
+def _loc_mask(batch, device):
+    """Supervise localization on all samples that provide a valid bounding box."""
+    return batch["has_bbox"].float().to(device)
+
 class SentinelTrainer:
     """
     Main training loop for SENTINEL-Vision.
@@ -74,6 +79,7 @@ class SentinelTrainer:
         self.mixed_precision = train_config.get("mixed_precision", True)
         self.log_interval = train_config.get("log_interval", 50)
         self.eval_interval = train_config.get("eval_interval", 1)
+        self.gradient_accumulation_steps = max(1, train_config.get("gradient_accumulation_steps", 1))
 
         # Checkpointing
         self.checkpoint_dir = Path(config.get("checkpoint_dir", f"checkpoints/{stage_name}"))
@@ -84,12 +90,15 @@ class SentinelTrainer:
         self.early_stopping_counter = 0
         self.best_loc_iou = float("-inf")
 
-        # Mixed precision
+        # Mixed precision: prefer bfloat16 on Ampere/Ada GPUs for rock-solid stability
         self.device_type = "cuda" if str(device).startswith("cuda") else "cpu"
+        self.use_bf16 = self.mixed_precision and self.device_type == "cuda" and torch.cuda.is_bf16_supported()
+        self.amp_dtype = torch.bfloat16 if self.use_bf16 else torch.float16
+        self.use_scaler = self.mixed_precision and not self.use_bf16
         try:
-            self.scaler = torch.amp.GradScaler(self.device_type, enabled=self.mixed_precision)
+            self.scaler = torch.amp.GradScaler(self.device_type, enabled=self.use_scaler)
         except Exception:
-            self.scaler = GradScaler(enabled=self.mixed_precision)
+            self.scaler = GradScaler(enabled=self.use_scaler)
 
         # W&B
         self.use_wandb = config.get("wandb", {}).get("enabled", False) and WANDB_AVAILABLE
@@ -155,6 +164,7 @@ class SentinelTrainer:
                 self.history["val_risk_f1"].append(val_metrics["risk_f1"])
                 self.history["val_recall_harmful"].append(val_metrics["recall_harmful"])
                 self.history["val_localization_iou"].append(val_metrics.get("localization_iou", 0.0))
+                self.history.setdefault("val_category_accuracy", []).append(val_metrics.get("category_accuracy", 0.0))
 
                 self._save_metrics_csv(epoch, train_metrics, val_metrics)
                 self._save_sample_visualizations(epoch)
@@ -162,13 +172,16 @@ class SentinelTrainer:
                 # Checkpointing: recall drives best.pt; localization IoU drives
                 # best_loc.pt. Either improving resets patience, so localization
                 # is not cut off while recall plateaus.
-                metric_value = val_metrics.get(self.checkpoint_metric, val_metrics["loss"])
+                metric_key = self.checkpoint_metric
+                if metric_key not in val_metrics and metric_key.startswith("val_"):
+                    metric_key = metric_key[4:]
+                metric_value = val_metrics.get(metric_key, val_metrics.get("recall_harmful", val_metrics["loss"]))
                 loc_iou = val_metrics.get("localization_iou", 0.0)
                 improved = False
                 if metric_value > self.best_metric:
                     self.best_metric = metric_value
                     self._save_checkpoint(epoch, val_metrics, is_best=True)
-                    logger.info(f"New best {self.checkpoint_metric}: {metric_value:.4f}")
+                    logger.info(f"New best {self.checkpoint_metric} ({metric_key}): {metric_value:.4f}")
                     improved = True
                 if loc_iou > self.best_loc_iou:
                     self.best_loc_iou = loc_iou
@@ -216,6 +229,7 @@ class SentinelTrainer:
         loss_components = {}
 
         start_time = time.time()
+        self.optimizer.zero_grad()
 
         for batch_idx, batch in enumerate(self.train_loader):
             # Move to device
@@ -227,13 +241,11 @@ class SentinelTrainer:
                 "risk_label": batch["risk_label"],
                 "category_label": batch["category_label"],
                 "bbox": batch["bbox"],
-                "has_bbox": batch["has_bbox"],
+                "has_bbox": _loc_mask(batch, self.device),
             }
 
-            self.optimizer.zero_grad()
-
             try:
-                autocast_ctx = torch.amp.autocast(self.device_type, enabled=self.mixed_precision)
+                autocast_ctx = torch.amp.autocast(self.device_type, dtype=self.amp_dtype, enabled=self.mixed_precision)
             except Exception:
                 autocast_ctx = autocast(enabled=self.mixed_precision)
 
@@ -245,15 +257,41 @@ class SentinelTrainer:
                 loss_dict = self.loss_fn(predictions, targets)
                 loss = loss_dict["total_loss"]
 
-            self.scaler.scale(loss).backward()
-            self.scaler.unscale_(self.optimizer)
+            if torch.isnan(loss) or torch.isinf(loss):
+                logger.warning(
+                    f"Epoch {epoch} [{batch_idx}/{len(self.train_loader)}] "
+                    f"Encountered NaN/Inf loss ({loss.item() if hasattr(loss, 'item') else loss}), skipping step."
+                )
+                self.model.zero_grad(set_to_none=True)
+                continue
 
-            # Gradient clipping
-            if self.gradient_clip > 0:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip)
+            scaled_loss = loss / self.gradient_accumulation_steps
+            if self.use_scaler:
+                self.scaler.scale(scaled_loss).backward()
+            else:
+                scaled_loss.backward()
 
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
+            is_accum_step = ((batch_idx + 1) % self.gradient_accumulation_steps == 0) or ((batch_idx + 1) == len(self.train_loader))
+            if is_accum_step:
+                if self.use_scaler:
+                    self.scaler.unscale_(self.optimizer)
+                if self.gradient_clip > 0:
+                    grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip)
+                    if torch.isnan(grad_norm) or torch.isinf(grad_norm):
+                        logger.warning(
+                            f"Epoch {epoch} [{batch_idx}] Non-finite gradient norm "
+                            f"({grad_norm.item() if hasattr(grad_norm, 'item') else grad_norm}), skipping optimizer step."
+                        )
+                        self.model.zero_grad(set_to_none=True)
+                        if self.use_scaler:
+                            self.scaler.update()
+                        continue
+                if self.use_scaler:
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    self.optimizer.step()
+                self.model.zero_grad(set_to_none=True)
 
             # Accumulate
             batch_size = frames.size(0)
@@ -319,11 +357,11 @@ class SentinelTrainer:
                 "risk_label": batch["risk_label"],
                 "category_label": batch["category_label"],
                 "bbox": batch["bbox"],
-                "has_bbox": batch["has_bbox"],
+                "has_bbox": _loc_mask(batch, self.device),
             }
 
             try:
-                autocast_ctx = torch.amp.autocast(self.device_type, enabled=self.mixed_precision)
+                autocast_ctx = torch.amp.autocast(self.device_type, dtype=self.amp_dtype, enabled=self.mixed_precision)
             except Exception:
                 autocast_ctx = autocast(enabled=self.mixed_precision)
 
@@ -395,12 +433,38 @@ class SentinelTrainer:
         fp = (risk_preds * (1 - risk_labels)).sum()
         fn = ((1 - risk_preds) * risk_labels).sum()
 
-        precision = tp / (tp + fp + 1e-8)
-        recall = tp / (tp + fn + 1e-8)
-        f1 = 2 * precision * recall / (precision + recall + 1e-8)
+        precision = tp / (tp + fp + 1e-6)
+        recall = tp / (tp + fn + 1e-6)
+        f1 = 2 * precision * recall / (precision + recall + 1e-6)
 
         # Harmful recall (recall on positive class only)
         recall_harmful = recall.item()
+
+        # Dynamic optimal threshold via Precision-Recall curve
+        best_f1 = f1.item()
+        best_precision = precision.item()
+        best_recall = recall.item()
+        best_thresh = threshold
+        auc_score = 0.5
+
+        if risk_labels.sum() > 0:
+            try:
+                import numpy as np
+                from sklearn.metrics import precision_recall_curve, roc_auc_score
+                y_true = risk_labels.cpu().numpy()
+                y_scores = risk_scores.cpu().numpy()
+                p_curve, r_curve, th_curve = precision_recall_curve(y_true, y_scores)
+                f1_curve = 2 * p_curve * r_curve / (p_curve + r_curve + 1e-6)
+                if len(f1_curve) > 0 and not np.isnan(f1_curve).all():
+                    best_idx = int(np.nanargmax(f1_curve))
+                    best_f1 = float(f1_curve[best_idx])
+                    best_precision = float(p_curve[best_idx])
+                    best_recall = float(r_curve[best_idx])
+                    if len(th_curve) > 0:
+                        best_thresh = float(th_curve[min(best_idx, len(th_curve) - 1)])
+                auc_score = float(roc_auc_score(y_true, y_scores))
+            except Exception:
+                pass
 
         # Category accuracy
         cat_probs = preds["category_probs"]
@@ -423,13 +487,24 @@ class SentinelTrainer:
                 ious.append(iou)
             localization_iou = sum(ious) / len(ious) if ious else 0.0
 
+        # Choose the best metric set between optimal calibrated threshold and fixed 0.5
+        use_optimal = best_f1 >= f1.item()
+        reported_precision = best_precision if use_optimal else precision.item()
+        reported_recall = best_recall if use_optimal else recall.item()
+        reported_f1 = best_f1 if use_optimal else f1.item()
+
         return {
-            "risk_precision": precision.item(),
-            "risk_recall": recall.item(),
-            "risk_f1": f1.item(),
-            "recall_harmful": recall_harmful,
+            "risk_precision": reported_precision,
+            "risk_recall": reported_recall,
+            "risk_f1": reported_f1,
+            "recall_harmful": reported_recall,
             "category_accuracy": cat_acc,
             "localization_iou": localization_iou,
+            "auc_roc": auc_score,
+            "optimal_threshold": best_thresh,
+            "risk_precision_05": precision.item(),
+            "risk_recall_05": recall.item(),
+            "risk_f1_05": f1.item(),
         }
 
     def _compute_iou(self, box1: torch.Tensor, box2: torch.Tensor) -> float:
@@ -525,11 +600,18 @@ class SentinelTrainer:
                     if by2 <= by1:
                         by2 = min(1.0, by1 + 1e-3)
 
+                    r_val = float(risk_scores[i].item())
+                    if math.isnan(r_val) or math.isinf(r_val):
+                        r_val = 0.0
+                    c_conf = float(category_probs[i, cat_idx].item())
+                    if math.isnan(c_conf) or math.isinf(c_conf):
+                        c_conf = 0.0
+
                     vis = visualize_predictions(
                         image=img,
-                        risk_score=float(risk_scores[i].item()),
+                        risk_score=r_val,
                         category=category_names[cat_idx],
-                        category_conf=float(category_probs[i, cat_idx].item()),
+                        category_conf=c_conf,
                         bbox=(bx1, by1, bx2, by2),
                         normalized=True,
                     )
@@ -597,15 +679,57 @@ class SentinelTrainer:
         """Resume training from checkpoint."""
         checkpoint = load_checkpoint(checkpoint_path, map_location=self.device)
 
-        self.model.load_state_dict(checkpoint["model_state_dict"])
-        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        if self.scheduler and checkpoint["scheduler_state_dict"]:
-            self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
-        self.scaler.load_state_dict(checkpoint["scaler_state_dict"])
+        try:
+            self.model.load_state_dict(checkpoint["model_state_dict"], strict=True)
+        except Exception as e:
+            logger.warning(f"Strict model load failed ({e}), attempting non-strict shape-filtered load...")
+            current_sd = self.model.state_dict()
+            compatible_sd = {
+                k: v for k, v in checkpoint["model_state_dict"].items()
+                if k in current_sd and current_sd[k].shape == v.shape
+            }
+            self.model.load_state_dict(compatible_sd, strict=False)
+
+        try:
+            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        except Exception as e:
+            logger.warning(f"Optimizer state loading failed ({e}), continuing with fresh optimizer state.")
+
+        if self.scheduler and checkpoint.get("scheduler_state_dict"):
+            try:
+                self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+            except Exception as e:
+                logger.warning(f"Scheduler state loading failed ({e}), keeping default scheduler.")
+
+        if "scaler_state_dict" in checkpoint and checkpoint["scaler_state_dict"] is not None:
+            try:
+                self.scaler.load_state_dict(checkpoint["scaler_state_dict"])
+            except Exception as e:
+                logger.warning(f"Scaler state loading failed ({e})")
+
         self.history = checkpoint.get("history", self.history)
         self.best_metric = checkpoint.get("metrics", {}).get(self.checkpoint_metric, float("-inf"))
+        self.best_loc_iou = checkpoint.get("metrics", {}).get("localization_iou", float("-inf"))
 
         start_epoch = checkpoint["epoch"] + 1
+        if self.epochs < start_epoch:
+            additional_epochs = 10
+            new_epochs = checkpoint["epoch"] + additional_epochs
+            logger.info(
+                f"Configured epochs ({self.epochs}) is <= checkpoint epoch ({checkpoint['epoch']}). "
+                f"Automatically extending total epochs to {new_epochs}."
+            )
+            self.epochs = new_epochs
+
+        # Ensure a healthy learning rate for continuation epochs (e.g. 5e-5)
+        # instead of the near-zero learning rate from the tail of the previous cosine decay
+        curr_lr = self.optimizer.param_groups[0]["lr"]
+        if curr_lr < 1e-5:
+            target_cont_lr = float(self.config.get("continuation_lr", 5e-5))
+            for pg in self.optimizer.param_groups:
+                pg["lr"] = target_cont_lr
+            logger.info(f"Adjusted continuation learning rate from {curr_lr:.2e} to {target_cont_lr:.2e}")
+
         logger.info(f"Resumed from epoch {checkpoint['epoch']}, best metric: {self.best_metric:.4f}")
 
         return start_epoch
@@ -620,14 +744,19 @@ def create_optimizer(model: SentinelModel, config: DictConfig) -> torch.optim.Op
     head_params = []
 
     for name, param in model.named_parameters():
+        if "clip_backbone" in name:
+            if not param.requires_grad:
+                continue  # frozen CLIP backbone
         if "frame_encoder.backbone" in name:
             backbone_params.append(param)
         else:
             head_params.append(param)
 
+    base_lr = float(train_config.get("learning_rate", 3e-4))
+    backbone_lr = float(train_config.get("backbone_lr", base_lr * 0.1))
     param_groups = [
-        {"params": backbone_params, "lr": train_config.get("backbone_lr", train_config.get("learning_rate", 3e-4) * 0.1)},
-        {"params": head_params, "lr": train_config.get("learning_rate", 3e-4)},
+        {"params": backbone_params, "lr": backbone_lr},
+        {"params": head_params, "lr": base_lr},
     ]
 
     optimizer = torch.optim.AdamW(

@@ -217,7 +217,7 @@ def create_train_transform(config: Dict[str, Any]) -> ScreenshotAugmentation:
     aug_config = config.get("augmentation", {})
     return ScreenshotAugmentation(
         target_resolution=tuple(config.get("frame_window", {}).get("resolution", [224, 224])),
-        random_crop=aug_config.get("random_crop", True),
+        random_crop=aug_config.get("random_crop", False),
         brightness_jitter=aug_config.get("brightness_jitter", 0.2),
         jpeg_noise=aug_config.get("jpeg_noise", True),
         temporal_dropout=aug_config.get("temporal_dropout", 0.1),

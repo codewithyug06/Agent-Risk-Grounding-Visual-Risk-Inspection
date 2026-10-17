@@ -339,6 +339,10 @@ class SentinelDataset(Dataset):
     def __len__(self) -> int:
         return len(self.window_indices)
 
+    def get_label(self, idx: int) -> int:
+        traj_idx, _, action_idx = self.window_indices[idx]
+        return self.trajectories[traj_idx].pairs[action_idx].label
+
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         traj_idx, start_idx, action_idx = self.window_indices[idx]
         traj = self.trajectories[traj_idx]
@@ -423,6 +427,10 @@ class SyntheticInjectionDataset(Dataset):
     def __len__(self) -> int:
         return len(self.sample_dirs)
 
+    def get_label(self, idx: int) -> int:
+        name = self.sample_dirs[idx].name
+        return 0 if name.startswith("benign_") else 1
+
     def __getitem__(self, idx: int) -> Dict[str, Any]:
         sample_dir = self.sample_dirs[idx]
         with open(sample_dir / "label.json") as f:
@@ -498,8 +506,12 @@ class CombinedSentinelDataset(Dataset):
 
     def _is_harmful(self, idx: int) -> bool:
         if idx < self._real_len:
+            if hasattr(self.real_dataset, "get_label"):
+                return bool(self.real_dataset.get_label(idx))
             item = self.real_dataset[idx]
         else:
+            if hasattr(self.synthetic_dataset, "get_label"):
+                return bool(self.synthetic_dataset.get_label(idx - self._real_len))
             item = self.synthetic_dataset[idx - self._real_len]
         label = item["risk_label"]
         return bool(label.item() if isinstance(label, torch.Tensor) else label)

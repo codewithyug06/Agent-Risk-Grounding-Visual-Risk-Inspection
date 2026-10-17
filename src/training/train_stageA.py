@@ -125,12 +125,13 @@ def train_stage_a(config: DictConfig) -> DictConfig:
 
     model.set_epoch = set_epoch_with_unfreeze
 
+    start_epoch = 1
     resume_path = config.get("resume_from", None)
     if resume_path:
         start_epoch = trainer.resume_from_checkpoint(resume_path)
         logger.info(f"Resumed from epoch {start_epoch}")
 
-    results = trainer.train()
+    results = trainer.train(start_epoch=start_epoch)
 
     logger.info("Stage A training completed!")
     logger.info(f"Best val_recall_harmful: {results['best_metric']:.4f}")

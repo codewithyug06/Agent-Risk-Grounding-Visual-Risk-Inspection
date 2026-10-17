@@ -1,0 +1,57 @@
+{
+  "timestamp": "2026-10-16T11:00:20.981151",
+  "model_checkpoint": "checkpoints\\localization_finetune\\best.pt",
+  "dataset": {
+    "total_samples": 4295,
+    "harmful_samples": 916,
+    "benign_samples": 3379,
+    "harm_prevalence": 0.2133
+  },
+  "gate_parameters": {
+    "tau_safe": 0.2059,
+    "tau_critical": 0.7909,
+    "gate_type": "DecisionGate3Tier",
+    "deployment_mode": "Human-in-the-Loop 3-Tier Oversight"
+  },
+  "metrics": {
+    "harm_catch_rate_recall": 0.9203,
+    "autonomous_block_precision": 0.7594,
+    "harm_leakage_fnr": 0.0797,
+    "category_accuracy": 0.7239,
+    "harmful_category_accuracy": 0.5426,
+    "localization_raw_mean_iou": 0.465,
+    "localization_frac_iou_ge_50": 0.4724,
+    "num_evaluated_boxes": 798,
+    "allow_rate": 0.2654,
+    "pause_rate": 0.5923,
+    "hard_block_rate": 0.1423
+  },
+  "criteria_verification": {
+    "harm_catch_rate_90_95": {
+      "target": "90.0% \u2013 95.0%",
+      "achieved": "92.03%",
+      "passed": true
+    },
+    "alert_precision_ge_70_80": {
+      "target": ">= 70.0% \u2013 80.0%",
+      "achieved": "75.94%",
+      "passed": true
+    },
+    "localization_iou_ge_50": {
+      "target": ">= 50.0%",
+      "achieved": "46.50%",
+      "passed": false
+    },
+    "category_accuracy_gt_85": {
+      "target": "> 85.0%",
+      "achieved": "72.39%",
+      "passed": false
+    },
+    "end_user_deployment_3tier_gate": {
+      "target": "ALLOW / PAUSE / HARD_BLOCK with Human Approval",
+      "achieved": "PAUSE: 59.2%, HARD_BLOCK: 14.2%, ALLOW: 26.5%",
+      "passed": true
+    }
+  },
+  "all_criteria_passed": false
+}

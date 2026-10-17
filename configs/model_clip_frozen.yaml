@@ -1,0 +1,55 @@
+defaults:
+  - data
+  - _self_
+
+# Phase A/B/C of plan and-once-again-go-velvet-fairy.md: frozen CLIP backbone for the
+# risk/category path. Localization keeps the same from-scratch frame_encoder as model_small.
+backbone: "vit_small_patch16_224"
+pretrained: true
+freeze_backbone_epochs: 3
+
+risk_backbone: clip_frozen
+clip_backbone:
+  model_name: "ViT-B-16-quickgelu"
+  pretrained: "openai"
+  temporal_pool: "mean"
+  hidden_dim: 256
+  num_categories: 5
+  num_layers: 0        # 0 = linear probe (Phase B default); set 2 to compare MLP head
+  dropout: 0.1
+
+temporal:
+  num_heads: 8
+  num_layers: 3
+  dropout: 0.1
+  max_frames: 8
+
+risk_head:
+  hidden_dim: 256
+  num_categories: 5
+
+refiner:
+  enabled: true
+  hidden: 256
+  pool: 7
+  num_proposals: 30
+  nms_iou: 0.5
+  jitter_copies: 6
+  jitter_frac: 0.15
+
+localization:
+  anchor_sizes: [8, 16, 32, 64]
+  iou_threshold: 0.5
+
+training:
+  batch_size: 16
+  learning_rate: 1e-3   # only a small head trains; frozen backbone tolerates a higher LR
+  weight_decay: 1e-4
+  epochs: 15            # frozen backbone = fast epochs, no need for 35
+  warmup_epochs: 2
+  gradient_clip: 1.0
+  mixed_precision: true
+  num_workers: 0
+
+seed: 42
+device: "cuda"

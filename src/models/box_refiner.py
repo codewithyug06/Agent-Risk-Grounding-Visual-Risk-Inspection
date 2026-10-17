@@ -67,9 +67,11 @@ class BoxRefiner(nn.Module):
         noise = (torch.rand(B, self.jitter_copies, 4, device=gt.device) * 2 - 1) * self.jitter_frac
         jit = gt[:, None, :] + noise * size[:, None, :]
         jit = jit.clamp(0, self.image_size)
-        x1 = torch.min(jit[..., 0], jit[..., 2] - 1.0)
-        y1 = torch.min(jit[..., 1], jit[..., 3] - 1.0)
-        return torch.stack([x1, y1, jit[..., 2].clamp(min=1.0), jit[..., 3].clamp(min=1.0)], dim=-1)
+        x1 = torch.min(jit[..., 0], jit[..., 2] - 1.0).clamp(min=0.0)
+        y1 = torch.min(jit[..., 1], jit[..., 3] - 1.0).clamp(min=0.0)
+        x2 = torch.max(jit[..., 2], x1 + 1.0).clamp(max=float(self.image_size))
+        y2 = torch.max(jit[..., 3], y1 + 1.0).clamp(max=float(self.image_size))
+        return torch.stack([x1, y1, x2, y2], dim=-1)
 
     @staticmethod
     def _decode(props: torch.Tensor, deltas: torch.Tensor) -> torch.Tensor:

@@ -1,0 +1,61 @@
+{
+  "timestamp": "2026-10-16T11:14:48.714382",
+  "model_checkpoint": "checkpoints\\stage_c\\best_loc.pt",
+  "dataset": {
+    "total_samples": 4295,
+    "harmful_samples": 916,
+    "benign_samples": 3379,
+    "harm_prevalence": 0.2133
+  },
+  "gate_parameters": {
+    "tau_safe": 0.1888,
+    "tau_critical": 0.9828,
+    "gate_type": "DecisionGate3Tier",
+    "deployment_mode": "Human-in-the-Loop 3-Tier Oversight"
+  },
+  "metrics": {
+    "harm_catch_rate_recall": 0.9203,
+    "autonomous_block_precision": 0.7521,
+    "harm_leakage_fnr": 0.0797,
+    "category_accuracy": 0.7779,
+    "raw_unconditioned_category_accuracy": 0.7562,
+    "harmful_category_accuracy": 0.5229,
+    "localization_raw_mean_iou": 0.4917,
+    "localization_stage1_mean_iou": 0.4952,
+    "localization_effective_mean_iou": 0.4952,
+    "localization_frac_iou_ge_50": 0.4862,
+    "localization_stage1_frac_iou_ge_50": 0.49,
+    "num_evaluated_boxes": 798,
+    "allow_rate": 0.3022,
+    "pause_rate": 0.586,
+    "hard_block_rate": 0.1118
+  },
+  "criteria_verification": {
+    "harm_catch_rate_90_95": {
+      "target": "90.0% \u2013 95.0%",
+      "achieved": "92.03%",
+      "passed": true
+    },
+    "alert_precision_ge_70_80": {
+      "target": ">= 70.0% \u2013 80.0%",
+      "achieved": "75.21%",
+      "passed": true
+    },
+    "localization_iou_ge_50": {
+      "target": ">= 50.0%",
+      "achieved": "49.52% (Stage 1: 49.52%, Refined: 49.17%)",
+      "passed": false
+    },
+    "category_accuracy_gt_85": {
+      "target": "> 85.0%",
+      "achieved": "77.79% (Raw: 75.62%)",
+      "passed": false
+    },
+    "end_user_deployment_3tier_gate": {
+      "target": "ALLOW / PAUSE / HARD_BLOCK with Human Approval",
+      "achieved": "PAUSE: 58.6%, HARD_BLOCK: 11.2%, ALLOW: 30.2%",
+      "passed": true
+    }
+  },
+  "all_criteria_passed": false
+}

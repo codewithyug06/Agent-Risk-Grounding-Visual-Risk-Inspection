@@ -1,0 +1,308 @@
+{
+  "timestamp": "2026-09-25T21:55:12.002022",
+  "config": {
+    "processed_dir": "data/processed",
+    "datasets": {
+      "multimodal_mind2web": "../Datasets/Multimodal-Mind2Web",
+      "screenspot": "../Datasets/ScreenSpot",
+      "screenspot_v2": "../Datasets/ScreenSpot-v2"
+    },
+    "frame_window": {
+      "k": 6,
+      "fps": 3,
+      "resolution": [
+        224,
+        224
+      ]
+    },
+    "splits": {
+      "train": 0.7,
+      "val": 0.15,
+      "test": 0.15
+    },
+    "harmful_categories": [
+      "destructive",
+      "financial",
+      "privacy",
+      "irreversible_external",
+      "benign"
+    ],
+    "weak_label_cues": {
+      "destructive": [
+        "delete",
+        "remove",
+        "clear",
+        "reset",
+        "format",
+        "erase",
+        "wipe",
+        "purge",
+        "cancel",
+        "close",
+        "discard"
+      ],
+      "financial": [
+        "pay",
+        "purchase",
+        "buy",
+        "checkout",
+        "subscribe",
+        "donate",
+        "transfer",
+        "order",
+        "price",
+        "cost",
+        "payment",
+        "billing"
+      ],
+      "privacy": [
+        "share",
+        "export",
+        "upload",
+        "send",
+        "download",
+        "sync",
+        "backup",
+        "publish",
+        "public",
+        "invite",
+        "forward",
+        "copy",
+        "attach"
+      ],
+      "irreversible_external": [
+        "submit",
+        "post",
+        "confirm",
+        "place order",
+        "book",
+        "save",
+        "reply",
+        "comment",
+        "register",
+        "sign up",
+        "log in",
+        "login",
+        "send email"
+      ]
+    },
+    "augmentation": {
+      "random_crop": true,
+      "brightness_jitter": 0.2,
+      "jpeg_noise": true,
+      "temporal_dropout": 0.1
+    },
+    "num_workers": 0,
+    "pin_memory": true,
+    "backbone": "vit_small_patch16_224",
+    "pretrained": true,
+    "freeze_backbone_epochs": 3,
+    "temporal": {
+      "num_heads": 8,
+      "num_layers": 3,
+      "dropout": 0.1,
+      "max_frames": 8
+    },
+    "risk_head": {
+      "hidden_dim": 256,
+      "num_categories": 5
+    },
+    "localization": {
+      "anchor_sizes": [
+        32,
+        64,
+        128,
+        256
+      ],
+      "num_anchors": 9,
+      "iou_threshold": 0.5
+    },
+    "training": {
+      "batch_size": 16,
+      "learning_rate": 0.0003,
+      "weight_decay": 0.0001,
+      "epochs": 35,
+      "warmup_epochs": 3,
+      "gradient_clip": 1.0,
+      "mixed_precision": true,
+      "num_workers": 0
+    },
+    "seed": 42,
+    "device": "cuda"
+  },
+  "models": {
+    "sentinel_vision_no_gate": {
+      "safety_metrics": {
+        "accuracy": 0.8181244079570571,
+        "precision": 0.5250569476082004,
+        "recall": 0.7435483870967742,
+        "f1": 0.6154873164218958,
+        "false_positive_rate": 0.16372202591283863,
+        "false_negative_rate": 0.2564516129032258,
+        "true_positives": 461,
+        "false_positives": 417,
+        "true_negatives": 2130,
+        "false_negatives": 159
+      },
+      "localization_iou": 0.03644436597824097,
+      "pr_auc": 0.7204943166449438,
+      "confusion_matrix": [
+        [
+          97,
+          1,
+          9,
+          4,
+          44
+        ],
+        [
+          2,
+          120,
+          2,
+          5,
+          63
+        ],
+        [
+          0,
+          1,
+          100,
+          1,
+          16
+        ],
+        [
+          1,
+          1,
+          4,
+          97,
+          52
+        ],
+        [
+          9,
+          109,
+          75,
+          155,
+          2199
+        ]
+      ],
+      "category_names": [
+        "destructive",
+        "financial",
+        "privacy",
+        "irreversible_external",
+        "benign"
+      ]
+    },
+    "sentinel_vision_gate": {
+      "safety_metrics": {
+        "accuracy": 0.1626144616356173,
+        "precision": 0.14048124557678698,
+        "recall": 0.6403225806451613,
+        "f1": 0.23041207196749858,
+        "false_positive_rate": 0.9536709854731056,
+        "false_negative_rate": 0.3596774193548387,
+        "true_positives": 397,
+        "false_positives": 2429,
+        "true_negatives": 118,
+        "false_negatives": 223
+      },
+      "localization_iou": 0.03644436597824097,
+      "pr_auc": 0.7204943166449438,
+      "confusion_matrix": [
+        [
+          97,
+          1,
+          9,
+          4,
+          44
+        ],
+        [
+          2,
+          120,
+          2,
+          5,
+          63
+        ],
+        [
+          0,
+          1,
+          100,
+          1,
+          16
+        ],
+        [
+          1,
+          1,
+          4,
+          97,
+          52
+        ],
+        [
+          9,
+          109,
+          75,
+          155,
+          2199
+        ]
+      ],
+      "category_names": [
+        "destructive",
+        "financial",
+        "privacy",
+        "irreversible_external",
+        "benign"
+      ]
+    },
+    "single_frame": {
+      "safety_metrics": {
+        "accuracy": 0.6310331072995612,
+        "precision": 0.13740458015267176,
+        "recall": 0.4846153846153846,
+        "f1": 0.2141036533559898,
+        "false_positive_rate": 0.35202492211838005,
+        "false_negative_rate": 0.5153846153846153,
+        "true_positives": 126,
+        "false_positives": 791,
+        "true_negatives": 1456,
+        "false_negatives": 134
+      }
+    },
+    "random_threshold": {
+      "safety_metrics": {
+        "accuracy": 0.4925797284496369,
+        "precision": 0.19098309329993737,
+        "recall": 0.49193548387096775,
+        "f1": 0.2751465944970681,
+        "false_positive_rate": 0.5072634471927758,
+        "false_negative_rate": 0.5080645161290323,
+        "true_positives": 305,
+        "false_positives": 1292,
+        "true_negatives": 1255,
+        "false_negatives": 315
+      }
+    },
+    "rule_based": {
+      "safety_metrics": {
+        "accuracy": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.0,
+        "true_positives": 620,
+        "false_positives": 0,
+        "true_negatives": 2547,
+        "false_negatives": 0
+      }
+    }
+  },
+  "latency": {
+    "mean_ms": 41.72251700103516,
+    "std_ms": 0.6878818721083517,
+    "min_ms": 40.632299991557375,
+    "max_ms": 44.382200023392215,
+    "p50_ms": 41.79785000451375,
+    "p95_ms": 42.571654994389974,
+    "p99_ms": 43.89591200859286,
+    "fps": 23.96787327033001
+  },
+  "summary": "\n====================================================================================================\nBENCHMARK SUMMARY\n====================================================================================================\nModel                      Precision     Recall         F1        FNR        FPR    Loc IoU\n----------------------------------------------------------------------------------------------------\nsentinel_vision_no_gate       0.5251     0.7435     0.6155     0.2565     0.1637     0.0364\nsentinel_vision_gate          0.1405     0.6403     0.2304     0.3597     0.9537     0.0364\nsingle_frame                  0.1374     0.4846     0.2141     0.5154     0.3520     0.0000\nrandom_threshold              0.1910     0.4919     0.2751     0.5081     0.5073     0.0000\nrule_based                    1.0000     1.0000     1.0000     0.0000     0.0000     0.0000\n===================================================================================================="
+}

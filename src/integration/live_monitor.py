@@ -19,11 +19,21 @@ from .agent_wrapper import SentinelWrapper, AgentAction, SentinelDecision
 logger = logging.getLogger(__name__)
 
 
+def _runtime_config():
+    from omegaconf import OmegaConf
+    from ..utils.config import load_config
+    return OmegaConf.merge(
+        load_config("model_small.yaml"),
+        load_config("data.yaml"),
+        load_config("curriculum.yaml")["stage_c"],
+    )
+
+
 @dataclass
 class MonitorConfig:
     """Configuration for live monitor."""
-    sentinel_checkpoint: str = "checkpoints/stage_c/best.pt"
-    gate_checkpoint: Optional[str] = "checkpoints/gate/latest.pt"
+    sentinel_checkpoint: str = "checkpoints/stage_c_clip_frozen/best.pt"
+    gate_checkpoint: Optional[str] = None
     device: str = "cuda"
     frame_window_size: int = 6
     target_resolution: Tuple[int, int] = (224, 224)
@@ -35,6 +45,9 @@ class MonitorConfig:
     show_risk_bar: bool = True
     log_decisions: bool = True
     save_dir: Optional[str] = None
+    monitor_only: bool = False
+    tau_safe: float = 0.16
+    tau_critical: float = 0.60
 
 
 class FrameCapture:
@@ -251,11 +264,12 @@ class LiveMonitor:
             self.sentinel = sentinel_wrapper
         else:
             self.sentinel = SentinelWrapper(
-                config=None,  # Will be set via hydra
+                config=_runtime_config(),
                 sentinel_checkpoint=config.sentinel_checkpoint,
                 gate_checkpoint=config.gate_checkpoint,
                 device=config.device,
                 frame_buffer_size=config.frame_window_size,
+                monitor_only=config.monitor_only,
                 target_resolution=config.target_resolution,
                 capture=self.capture,
             )
@@ -272,6 +286,7 @@ class LiveMonitor:
         # Callbacks
         self.on_decision: Optional[Callable[[SentinelDecision, Optional[AgentAction]], None]] = None
         self.on_high_risk: Optional[Callable[[SentinelDecision], None]] = None
+        self.on_pause: Optional[Callable[[SentinelDecision], None]] = None
 
     async def start(self):
         """Start live monitoring."""
@@ -324,8 +339,14 @@ class LiveMonitor:
         if self.on_decision:
             self.on_decision(decision, action)
 
-        if self.on_high_risk and decision.risk_score > 0.7:
-            self.on_high_risk(decision)
+        if decision.action == "PAUSE":
+            if self.on_pause:
+                self.on_pause(decision)
+            logger.warning(f"LiveMonitor: ACTION PAUSED for human approval: {decision.reasoning}")
+        elif decision.action == "HARD_BLOCK":
+            if self.on_high_risk:
+                self.on_high_risk(decision)
+            logger.error(f"LiveMonitor: ACTION BLOCKED: {decision.reasoning}")
 
         # Update stats
         latency = (time.perf_counter() - start) * 1000

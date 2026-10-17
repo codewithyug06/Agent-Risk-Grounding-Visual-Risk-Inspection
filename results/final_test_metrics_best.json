@@ -1,0 +1,37 @@
+{
+  "checkpoint": "checkpoints/stage_c/best.pt",
+  "evaluated_at": "2026-10-08T13:43:51",
+  "split": "test",
+  "detection": {
+    "threshold": 0.5,
+    "recall": 0.586,
+    "precision": 0.3022,
+    "f1": 0.3987,
+    "accuracy": 0.7385,
+    "tp": 317,
+    "fp": 732,
+    "fn": 224,
+    "tn": 2383
+  },
+  "localization": {
+    "refined_box": {
+      "n": 406,
+      "mean_iou": 0.1476,
+      "median_iou": 0.0,
+      "frac_iou_ge_0.5": 0.1601
+    },
+    "first_stage_argmax_box": {
+      "n": 406,
+      "mean_iou": 0.2507,
+      "median_iou": 0.2351,
+      "frac_iou_ge_0.5": 0.2069
+    },
+    "oracle_best_candidate": {
+      "n": 406,
+      "mean_iou": 0.4904,
+      "median_iou": 0.5284,
+      "frac_iou_ge_0.5": 0.5936
+    },
+    "proposal_recall_iou_ge_0.5": 0.5591
+  }
+}

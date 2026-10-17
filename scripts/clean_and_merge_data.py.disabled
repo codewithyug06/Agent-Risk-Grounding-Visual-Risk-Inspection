@@ -1,0 +1,177 @@
+"""
+Clean and merge all dataset tiers for OpticWall / SENTINEL-Vision.
+
+1. Silver tier: Merges ALL clean DOM-grounded synthetic samples from synthetic_v2 and synthetic_v3:
+   - train: modal and inline templates
+   - val: card template
+   - test: toolbar template
+   Both harmful and matched benign samples are preserved.
+
+2. Bronze tier (Mind2Web, ScreenSpot):
+   - Corrects the flawed keyword mapping: routine benign actions (clicking submit,
+     login, save, close, cancel, order by price, comments) are labeled as BENIGN (label=0, category=4).
+   - Only genuinely destructive system commands (drop table, rm -rf, format, wipe disk, etc.)
+     retain harmful status.
+   - Filters out degenerate 1-pixel bounding boxes (w < 0.015 or h < 0.015).
+
+3. Gold tier (MisActBench):
+   - Kept in val and test with human gold labels untouched. Never placed in train.
+"""
+
+import json
+import shutil
+from collections import Counter
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+PROC_DIR = ROOT / "data" / "processed"
+SYN_DIRS = [ROOT / "data" / "synthetic_v2", ROOT / "data" / "synthetic_v3"]
+DST_IMG_DIR = PROC_DIR / "synthetic" / "images"
+
+DESTRUCTIVE_PATTERNS = {
+    "rm -rf", "drop table", "drop database", "format c:", "format disk",
+    "purge database", "kill -9", "wipe disk", "permanently delete", "delete account"
+}
+
+SPLIT_BY_TEMPLATE = {
+    "modal": "train",
+    "inline": "train",
+    "card": "val",
+    "toolbar": "test",
+}
+
+
+def is_true_destructive(action: str) -> bool:
+    act = action.lower()
+    return any(p in act for p in DESTRUCTIVE_PATTERNS)
+
+
+def clean_bbox(bbox):
+    if not bbox or len(bbox) != 4:
+        return None
+    x1, y1, x2, y2 = bbox
+    w, h = x2 - x1, y2 - y1
+    if w < 0.015 or h < 0.015 or x2 <= x1 or y2 <= y1:
+        return None
+    return [max(0.0, min(1.0, float(c))) for c in [x1, y1, x2, y2]]
+
+
+def collect_silver_records():
+    silver_by_split = {"train": [], "val": [], "test": []}
+    DST_IMG_DIR.mkdir(parents=True, exist_ok=True)
+
+    for src_dir in SYN_DIRS:
+        rec_file = src_dir / "records.jsonl"
+        if not rec_file.exists():
+            continue
+        set_name = src_dir.name
+        img_src_dir = src_dir / "images"
+
+        for line in open(rec_file, encoding="utf-8"):
+            line = line.strip()
+            if not line:
+                continue
+            rec = json.loads(line)
+            tmpl = rec.get("metadata", {}).get("template", "modal")
+            target_split = SPLIT_BY_TEMPLATE.get(tmpl, "train")
+
+            img_name = Path(rec["frame_path"]).name
+            dst_name = f"{set_name}_{img_name}"
+            src_img_path = img_src_dir / img_name
+            if src_img_path.exists():
+                dst_img_path = DST_IMG_DIR / dst_name
+                if not dst_img_path.exists():
+                    shutil.copy2(src_img_path, dst_img_path)
+
+            clean_rec = {
+                "task_id": f"{set_name}_{rec.get('task_id', '')}",
+                "frame_path": f"synthetic/images/{dst_name}",
+                "action": rec.get("action", ""),
+                "label": int(rec.get("label", 0)),
+                "category": int(rec.get("category", 4)),
+                "bbox": clean_bbox(rec.get("bbox")),
+                "source": "synthetic",
+                "tier": "silver",
+                "metadata": rec.get("metadata", {}),
+            }
+            silver_by_split[target_split].append(clean_rec)
+
+    return silver_by_split
+
+
+def process_splits():
+    silver_by_split = collect_silver_records()
+    overall_counts = {}
+
+    for split in ["train", "val", "test"]:
+        split_path = PROC_DIR / f"{split}.jsonl"
+        existing_records = []
+        if split_path.exists():
+            for line in open(split_path, encoding="utf-8"):
+                line = line.strip()
+                if not line:
+                    continue
+                rec = json.loads(line)
+                src = str(rec.get("source", ""))
+                # Skip previously injected synthetic samples
+                if src.startswith("synthetic"):
+                    continue
+                existing_records.append(rec)
+
+        cleaned_records = []
+        # Process existing real data (gold & bronze)
+        for rec in existing_records:
+            tier = rec.get("tier", "bronze")
+            if tier == "gold":
+                # Gold (MisActBench) - keep untouched
+                cleaned_records.append(rec)
+            else:
+                # Bronze (Mind2Web, ScreenSpot)
+                act = str(rec.get("action", ""))
+                if is_true_destructive(act):
+                    label = 1
+                    category = 0  # destructive
+                else:
+                    label = 0
+                    category = 4  # benign
+                rec["label"] = label
+                rec["category"] = category
+                rec["bbox"] = clean_bbox(rec.get("bbox"))
+                rec["tier"] = "bronze"
+                cleaned_records.append(rec)
+
+        # Append silver records for this split
+        silver_recs = silver_by_split.get(split, [])
+        cleaned_records.extend(silver_recs)
+
+        # Write back cleaned split
+        with open(split_path, "w", encoding="utf-8") as f:
+            for r in cleaned_records:
+                f.write(json.dumps(r) + "\n")
+
+        harm = sum(1 for r in cleaned_records if r["label"] == 1)
+        ben = len(cleaned_records) - harm
+        has_box = sum(1 for r in cleaned_records if r.get("bbox") is not None)
+        overall_counts[split] = {
+            "total": len(cleaned_records),
+            "harmful": harm,
+            "benign": ben,
+            "has_bbox": has_box,
+            "tiers": dict(Counter(r.get("tier") for r in cleaned_records)),
+        }
+        print(f"[{split}] Total: {len(cleaned_records)} | Harmful: {harm} | Benign: {ben} | Valid BBoxes: {has_box}")
+        print(f"       Tiers: {overall_counts[split]['tiers']}")
+
+    # Write stats.json
+    stats_path = PROC_DIR / "stats.json"
+    stats_data = {
+        "splits": overall_counts,
+        "note": "Sanitized labels and merged full DOM-grounded silver synthetic data.",
+    }
+    with open(stats_path, "w", encoding="utf-8") as f:
+        json.dump(stats_data, f, indent=2)
+    print("Cleaned data processing complete. Stats saved to stats.json.")
+
+
+if __name__ == "__main__":
+    process_splits()

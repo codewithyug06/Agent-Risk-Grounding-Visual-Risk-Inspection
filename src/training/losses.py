@@ -7,6 +7,7 @@ Harmful class upweighted for imbalanced dataset.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from ..models.heatmap_head import HeatmapHead, heatmap_loss, offset_loss
 from typing import Dict, Optional, Tuple
 import logging
 
@@ -112,6 +113,9 @@ class SentinelLoss(nn.Module):
         obj_weight: float = 1.0,
         refiner_weight: float = 1.0,
         refiner_iou_thresh: float = 0.3,
+        heatmap_weight: float = 1.0,
+        heatmap_stride: int = 16,
+        heatmap_image_size: int = 224,
     ):
         super().__init__()
 
@@ -131,6 +135,8 @@ class SentinelLoss(nn.Module):
         # tests that construct a dummy `predictions` dict by hand.
         self.refiner_weight = refiner_weight
         self.refiner_iou_thresh = refiner_iou_thresh
+        self.heatmap_weight = heatmap_weight
+        self._heat_geom = HeatmapHead(feature_stride=heatmap_stride, image_size=heatmap_image_size)
         self.anchor_loc_loss_fn = AnchorMatchedLocalizationLoss(
             giou_weight=giou_weight, l1_weight=l1_weight, obj_weight=obj_weight,
         )
@@ -178,6 +184,17 @@ class SentinelLoss(nn.Module):
         Returns:
             Dict with individual losses and total
         """
+        # Ensure floating-point tensors are in float32 for loss computation
+        # (prevents float16 subnormal underflows where epsilons < 6e-5 round to 0.0)
+        predictions = {
+            k: v.float() if isinstance(v, torch.Tensor) and v.is_floating_point() else v
+            for k, v in predictions.items()
+        }
+        targets = {
+            k: v.float() if isinstance(v, torch.Tensor) and v.is_floating_point() else v
+            for k, v in targets.items()
+        }
+
         B = predictions["risk_logits"].shape[0]
         device = predictions["risk_logits"].device
 
@@ -245,6 +262,10 @@ class SentinelLoss(nn.Module):
             l1_loss = torch.tensor(0.0, device=device)
             obj_loss = torch.tensor(0.0, device=device)
 
+        heatmap_loss_val = torch.tensor(0.0, device=device)
+        if "heat_logits" in predictions:
+            heatmap_loss_val = self._heatmap_loss(predictions, targets, device)
+
         refiner_loss = torch.tensor(0.0, device=device)
         if "refine_scores" in predictions:
             refiner_loss = self._refiner_loss(predictions, targets, device)
@@ -254,19 +275,33 @@ class SentinelLoss(nn.Module):
             self.risk_weight * risk_loss +
             self.category_weight * category_loss +
             self.localization_weight * loc_loss +
-            self.refiner_weight * refiner_loss
+            self.refiner_weight * refiner_loss +
+            self.heatmap_weight * heatmap_loss_val
         )
 
         return {
             "total_loss": total_loss,
-            "risk_loss": risk_loss,
-            "category_loss": category_loss,
-            "localization_loss": loc_loss,
-            "giou_loss": giou_loss,
-            "l1_loss": l1_loss,
-            "obj_loss": obj_loss,
-            "refiner_loss": refiner_loss,
+            "risk_loss": torch.nan_to_num(risk_loss, nan=0.0),
+            "category_loss": torch.nan_to_num(category_loss, nan=0.0),
+            "localization_loss": torch.nan_to_num(loc_loss, nan=0.0),
+            "giou_loss": torch.nan_to_num(giou_loss, nan=0.0),
+            "l1_loss": torch.nan_to_num(l1_loss, nan=0.0),
+            "obj_loss": torch.nan_to_num(obj_loss, nan=0.0),
+            "refiner_loss": torch.nan_to_num(refiner_loss, nan=0.0),
+            "heatmap_loss": torch.nan_to_num(heatmap_loss_val, nan=0.0),
         }
+
+    def _heatmap_loss(self, predictions, targets, device):
+        mask = (targets["has_bbox"] > 0.5).float().to(device)
+        if mask.sum() == 0:
+            return torch.tensor(0.0, device=device)
+        image_size = predictions.get("image_size", self._heat_geom.image_size)
+        box = targets["bbox"].to(device) * image_size
+        geom = self._heat_geom.to(device)
+        target = geom.gaussian_target(box)
+        row, col, toff = geom.offset_target(box)
+        return heatmap_loss(predictions["heat_logits"], target, mask) + offset_loss(
+            predictions["heat_offsets"], row.to(device), col.to(device), toff.to(device), mask)
 
     def _refiner_loss(
         self,
@@ -284,10 +319,10 @@ class SentinelLoss(nn.Module):
         if not mask.any():
             return torch.tensor(0.0, device=device)
 
-        props = predictions["refine_proposals"][mask]
-        scores = predictions["refine_scores"][mask]
-        boxes = predictions["refine_boxes"][mask]
-        gt = (targets["bbox"].to(device) * image_size)[mask][:, None, :].expand_as(props)
+        props = predictions["refine_proposals"][mask].float()
+        scores = predictions["refine_scores"][mask].float()
+        boxes = predictions["refine_boxes"][mask].float()
+        gt = (targets["bbox"].to(device) * image_size)[mask][:, None, :].expand_as(props).float()
 
         with torch.no_grad():
             iou = AnchorMatchedLocalizationLoss._pairwise_iou(props.reshape(-1, 4), gt.reshape(-1, 4))
@@ -301,13 +336,13 @@ class SentinelLoss(nn.Module):
             bp = boxes[pos] / image_size
             gp = gt[pos] / image_size
             w = reg_weight[pos]
-            w = w / w.sum().clamp(min=1e-8) * w.numel()
+            w = w / w.sum().clamp(min=1e-6) * w.numel()
             giou_each = 1.0 - AnchorMatchedLocalizationLoss._giou_each(bp, gp)
             l1_each = (bp - gp).abs().mean(dim=1)
             reg_loss = (w * (self.giou_weight * giou_each + self.l1_weight * l1_each)).mean()
         else:
             reg_loss = torch.tensor(0.0, device=device)
-        return cls_loss + reg_loss
+        return torch.nan_to_num(cls_loss + reg_loss, nan=0.0)
 
     def _compute_giou_loss(
         self,
@@ -315,14 +350,15 @@ class SentinelLoss(nn.Module):
         gt_bbox: torch.Tensor,
     ) -> torch.Tensor:
         """
-        Compute GIoU loss.
+        Compute GIoU loss with numerical stabilization.
         Args:
             pred_bbox: (N, 4) predicted bboxes [x1, y1, x2, y2] normalized
             gt_bbox: (N, 4) target bboxes
         """
-        # Enforce valid box ordering (x2 >= x1, y2 >= y1). Early in training the
-        # regression head can predict degenerate boxes; reordering prevents the
-        # area/union terms from going negative and flipping the loss sign.
+        pred_bbox = pred_bbox.float()
+        gt_bbox = gt_bbox.float()
+
+        # Enforce valid box ordering (x2 >= x1, y2 >= y1)
         pred_x1, pred_x2 = torch.min(pred_bbox[:, [0, 2]], dim=1).values, torch.max(pred_bbox[:, [0, 2]], dim=1).values
         pred_y1, pred_y2 = torch.min(pred_bbox[:, [1, 3]], dim=1).values, torch.max(pred_bbox[:, [1, 3]], dim=1).values
         pred_bbox = torch.stack([pred_x1, pred_y1, pred_x2, pred_y2], dim=1)
@@ -342,11 +378,11 @@ class SentinelLoss(nn.Module):
         inter_area = inter_w * inter_h
 
         # Union
-        area_p = (pred_bbox[:, 2] - pred_bbox[:, 0]) * (pred_bbox[:, 3] - pred_bbox[:, 1])
-        area_t = (gt_bbox[:, 2] - gt_bbox[:, 0]) * (gt_bbox[:, 3] - gt_bbox[:, 1])
+        area_p = (pred_bbox[:, 2] - pred_bbox[:, 0]).clamp(min=0) * (pred_bbox[:, 3] - pred_bbox[:, 1]).clamp(min=0)
+        area_t = (gt_bbox[:, 2] - gt_bbox[:, 0]).clamp(min=0) * (gt_bbox[:, 3] - gt_bbox[:, 1]).clamp(min=0)
         union_area = area_p + area_t - inter_area
 
-        iou = inter_area / (union_area + 1e-8)
+        iou = inter_area / union_area.clamp(min=1e-6)
 
         # Enclosing box
         x1_c = torch.min(pred_bbox[:, 0], gt_bbox[:, 0])
@@ -354,14 +390,14 @@ class SentinelLoss(nn.Module):
         x2_c = torch.max(pred_bbox[:, 2], gt_bbox[:, 2])
         y2_c = torch.max(pred_bbox[:, 3], gt_bbox[:, 3])
 
-        c_w = x2_c - x1_c
-        c_h = y2_c - y1_c
-        c_area = c_w * c_h + 1e-8
+        c_w = (x2_c - x1_c).clamp(min=1e-6)
+        c_h = (y2_c - y1_c).clamp(min=1e-6)
+        c_area = (c_w * c_h).clamp(min=1e-6)
 
         giou = iou - (c_area - union_area) / c_area
         loss = 1.0 - giou
 
-        return loss.mean()
+        return torch.nan_to_num(loss.mean(), nan=0.0)
 
 
 class LocalizationLoss(nn.Module):
@@ -436,7 +472,19 @@ class LocalizationLoss(nn.Module):
         }
 
     def _giou_loss(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        """Compute GIoU loss."""
+        """Compute GIoU loss with numerical stabilization."""
+        pred = pred.float()
+        target = target.float()
+
+        # Enforce valid box ordering
+        px1, px2 = torch.min(pred[:, [0, 2]], dim=1).values, torch.max(pred[:, [0, 2]], dim=1).values
+        py1, py2 = torch.min(pred[:, [1, 3]], dim=1).values, torch.max(pred[:, [1, 3]], dim=1).values
+        pred = torch.stack([px1, py1, px2, py2], dim=1)
+
+        gx1, gx2 = torch.min(target[:, [0, 2]], dim=1).values, torch.max(target[:, [0, 2]], dim=1).values
+        gy1, gy2 = torch.min(target[:, [1, 3]], dim=1).values, torch.max(target[:, [1, 3]], dim=1).values
+        target = torch.stack([gx1, gy1, gx2, gy2], dim=1)
+
         x1_i = torch.max(pred[:, 0], target[:, 0])
         y1_i = torch.max(pred[:, 1], target[:, 1])
         x2_i = torch.min(pred[:, 2], target[:, 2])
@@ -446,23 +494,23 @@ class LocalizationLoss(nn.Module):
         inter_h = torch.clamp(y2_i - y1_i, min=0)
         inter_area = inter_w * inter_h
 
-        area_p = (pred[:, 2] - pred[:, 0]) * (pred[:, 3] - pred[:, 1])
-        area_t = (target[:, 2] - target[:, 0]) * (target[:, 3] - target[:, 1])
+        area_p = (pred[:, 2] - pred[:, 0]).clamp(min=0) * (pred[:, 3] - pred[:, 1]).clamp(min=0)
+        area_t = (target[:, 2] - target[:, 0]).clamp(min=0) * (target[:, 3] - target[:, 1]).clamp(min=0)
         union_area = area_p + area_t - inter_area
 
-        iou = inter_area / (union_area + 1e-8)
+        iou = inter_area / union_area.clamp(min=1e-6)
 
         x1_c = torch.min(pred[:, 0], target[:, 0])
         y1_c = torch.min(pred[:, 1], target[:, 1])
         x2_c = torch.max(pred[:, 2], target[:, 2])
         y2_c = torch.max(pred[:, 3], target[:, 3])
 
-        c_w = x2_c - x1_c
-        c_h = y2_c - y1_c
-        c_area = c_w * c_h + 1e-8
+        c_w = (x2_c - x1_c).clamp(min=1e-6)
+        c_h = (y2_c - y1_c).clamp(min=1e-6)
+        c_area = (c_w * c_h).clamp(min=1e-6)
 
         giou = iou - (c_area - union_area) / c_area
-        return (1.0 - giou).mean()
+        return torch.nan_to_num((1.0 - giou).mean(), nan=0.0)
 
 
 class AnchorMatchedLocalizationLoss(nn.Module):
@@ -505,6 +553,8 @@ class AnchorMatchedLocalizationLoss(nn.Module):
     @staticmethod
     def _box_iou(boxes1: torch.Tensor, boxes2: torch.Tensor) -> torch.Tensor:
         """Pairwise IoU. boxes1: (N,4), boxes2: (M,4) -> (N,M)."""
+        boxes1 = boxes1.float()
+        boxes2 = boxes2.float()
         area1 = (boxes1[:, 2] - boxes1[:, 0]).clamp(min=0) * (boxes1[:, 3] - boxes1[:, 1]).clamp(min=0)
         area2 = (boxes2[:, 2] - boxes2[:, 0]).clamp(min=0) * (boxes2[:, 3] - boxes2[:, 1]).clamp(min=0)
         x1 = torch.max(boxes1[:, None, 0], boxes2[None, :, 0])
@@ -513,10 +563,22 @@ class AnchorMatchedLocalizationLoss(nn.Module):
         y2 = torch.min(boxes1[:, None, 3], boxes2[None, :, 3])
         inter = (x2 - x1).clamp(min=0) * (y2 - y1).clamp(min=0)
         union = area1[:, None] + area2[None, :] - inter
-        return inter / union.clamp(min=1e-8)
+        return torch.nan_to_num(inter / union.clamp(min=1e-6), nan=0.0)
 
     @staticmethod
     def _giou_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        pred = pred.float()
+        target = target.float()
+
+        # Enforce valid box ordering
+        px1, px2 = torch.min(pred[:, [0, 2]], dim=1).values, torch.max(pred[:, [0, 2]], dim=1).values
+        py1, py2 = torch.min(pred[:, [1, 3]], dim=1).values, torch.max(pred[:, [1, 3]], dim=1).values
+        pred = torch.stack([px1, py1, px2, py2], dim=1)
+
+        gx1, gx2 = torch.min(target[:, [0, 2]], dim=1).values, torch.max(target[:, [0, 2]], dim=1).values
+        gy1, gy2 = torch.min(target[:, [1, 3]], dim=1).values, torch.max(target[:, [1, 3]], dim=1).values
+        target = torch.stack([gx1, gy1, gx2, gy2], dim=1)
+
         x1_i = torch.max(pred[:, 0], target[:, 0])
         y1_i = torch.max(pred[:, 1], target[:, 1])
         x2_i = torch.min(pred[:, 2], target[:, 2])
@@ -527,20 +589,32 @@ class AnchorMatchedLocalizationLoss(nn.Module):
         area_t = (target[:, 2] - target[:, 0]).clamp(min=0) * (target[:, 3] - target[:, 1]).clamp(min=0)
         union = area_p + area_t - inter
 
-        iou = inter / union.clamp(min=1e-8)
+        iou = inter / union.clamp(min=1e-6)
 
         x1_c = torch.min(pred[:, 0], target[:, 0])
         y1_c = torch.min(pred[:, 1], target[:, 1])
         x2_c = torch.max(pred[:, 2], target[:, 2])
         y2_c = torch.max(pred[:, 3], target[:, 3])
-        area_c = (x2_c - x1_c).clamp(min=1e-8) * (y2_c - y1_c).clamp(min=1e-8)
+        area_c = (x2_c - x1_c).clamp(min=1e-6) * (y2_c - y1_c).clamp(min=1e-6)
 
         giou = iou - (area_c - union) / area_c
-        return (1 - giou).mean()
+        return torch.nan_to_num((1 - giou).mean(), nan=0.0)
 
     @staticmethod
     def _giou_each(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """Per-box GIoU for matched xyxy tensors (N, 4) -> (N,)."""
+        pred = pred.float()
+        target = target.float()
+
+        # Enforce valid box ordering
+        px1, px2 = torch.min(pred[:, [0, 2]], dim=1).values, torch.max(pred[:, [0, 2]], dim=1).values
+        py1, py2 = torch.min(pred[:, [1, 3]], dim=1).values, torch.max(pred[:, [1, 3]], dim=1).values
+        pred = torch.stack([px1, py1, px2, py2], dim=1)
+
+        gx1, gx2 = torch.min(target[:, [0, 2]], dim=1).values, torch.max(target[:, [0, 2]], dim=1).values
+        gy1, gy2 = torch.min(target[:, [1, 3]], dim=1).values, torch.max(target[:, [1, 3]], dim=1).values
+        target = torch.stack([gx1, gy1, gx2, gy2], dim=1)
+
         x1_i = torch.max(pred[:, 0], target[:, 0])
         y1_i = torch.max(pred[:, 1], target[:, 1])
         x2_i = torch.min(pred[:, 2], target[:, 2])
@@ -549,17 +623,20 @@ class AnchorMatchedLocalizationLoss(nn.Module):
         area_p = (pred[:, 2] - pred[:, 0]).clamp(min=0) * (pred[:, 3] - pred[:, 1]).clamp(min=0)
         area_t = (target[:, 2] - target[:, 0]).clamp(min=0) * (target[:, 3] - target[:, 1]).clamp(min=0)
         union = area_p + area_t - inter
-        iou = inter / union.clamp(min=1e-8)
+        iou = inter / union.clamp(min=1e-6)
         x1_c = torch.min(pred[:, 0], target[:, 0])
         y1_c = torch.min(pred[:, 1], target[:, 1])
         x2_c = torch.max(pred[:, 2], target[:, 2])
         y2_c = torch.max(pred[:, 3], target[:, 3])
-        area_c = (x2_c - x1_c).clamp(min=1e-8) * (y2_c - y1_c).clamp(min=1e-8)
-        return iou - (area_c - union) / area_c
+        area_c = (x2_c - x1_c).clamp(min=1e-6) * (y2_c - y1_c).clamp(min=1e-6)
+        giou = iou - (area_c - union) / area_c
+        return torch.nan_to_num(giou, nan=0.0)
 
     @staticmethod
     def _pairwise_iou(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         """Element-wise IoU between matched xyxy box tensors of shape (N, 4)."""
+        a = a.float()
+        b = b.float()
         x1 = torch.max(a[:, 0], b[:, 0])
         y1 = torch.max(a[:, 1], b[:, 1])
         x2 = torch.min(a[:, 2], b[:, 2])
@@ -567,24 +644,29 @@ class AnchorMatchedLocalizationLoss(nn.Module):
         inter = (x2 - x1).clamp(min=0) * (y2 - y1).clamp(min=0)
         area_a = (a[:, 2] - a[:, 0]).clamp(min=0) * (a[:, 3] - a[:, 1]).clamp(min=0)
         area_b = (b[:, 2] - b[:, 0]).clamp(min=0) * (b[:, 3] - b[:, 1]).clamp(min=0)
-        return inter / (area_a + area_b - inter).clamp(min=1e-8)
+        union = area_a + area_b - inter
+        return torch.nan_to_num(inter / union.clamp(min=1e-6), nan=0.0)
 
     @staticmethod
     def _quality_focal_loss(logits: torch.Tensor, target: torch.Tensor, alpha: float = 0.75, gamma: float = 2.0) -> torch.Tensor:
         """
         Varifocal-style loss with soft (IoU) targets. Positives are weighted by
-        |target - p|^gamma; negatives by alpha * p^gamma (focal down-weighting
-        of the ~5,500:1 easy-negative majority).
+        |target - p|^gamma; negatives by alpha * p^gamma with balanced mean normalization
+        so extreme anchor imbalance does not drown out positive gradients.
         """
+        logits = logits.float()
+        target = target.float()
         p = torch.sigmoid(logits)
         bce = F.binary_cross_entropy_with_logits(logits, target, reduction="none")
+        diff = (target - p).abs().clamp(min=1e-6)
         weight = torch.where(
             target > 0,
-            (target - p).abs().pow(gamma),
-            alpha * p.pow(gamma),
+            diff.pow(gamma),
+            alpha * p.clamp(min=1e-6).pow(gamma),
         )
         num_pos = (target > 0).sum().clamp(min=1).float()
-        return (weight * bce).sum() / num_pos
+        loss = (weight * bce).sum() / num_pos
+        return torch.nan_to_num(loss, nan=0.0)
 
     def forward(
         self,

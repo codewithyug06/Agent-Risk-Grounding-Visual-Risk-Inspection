@@ -147,6 +147,7 @@ class SentinelWrapper:
         gate_checkpoint: Optional[str] = None,
         device: str = "cuda",
         frame_buffer_size: int = 6,
+        monitor_only: bool = False,
         target_resolution: Tuple[int, int] = (224, 224),
         capture: Optional[ScreenshotCapture] = None,
     ):
@@ -170,6 +171,7 @@ class SentinelWrapper:
 
         # Load gate if provided
         self.gate = None
+        self.monitor_only = monitor_only
         if gate_checkpoint and Path(gate_checkpoint).exists():
             logger.info(f"Loading Decision Gate from {gate_checkpoint}")
             self.gate = create_decision_gate(OmegaConf.to_container(config))
@@ -198,6 +200,13 @@ class SentinelWrapper:
         # Callbacks
         self.on_decision: Optional[Callable[[SentinelDecision, AgentAction], None]] = None
         self.on_block: Optional[Callable[[SentinelDecision, AgentAction], bool]] = None  # Return True to override block
+        self.on_pause: Optional[Callable[[SentinelDecision, AgentAction], bool]] = None  # Return True to approve action, False to reject
+
+        # Initialize calibrated 3-tier gate if no gate checkpoint is provided
+        if self.gate is None:
+            from ..gate.decision_gate import DecisionGate3Tier
+            self.gate = DecisionGate3Tier(tau_safe=0.16, tau_critical=0.60)
+            logger.info("Initialized default calibrated DecisionGate3Tier (tau_safe=0.16, tau_crit=0.60)")
 
         logger.info("SentinelWrapper initialized")
 
@@ -271,8 +280,12 @@ class SentinelWrapper:
         category = self.categories[category_idx]
         category_conf = category_probs[category_idx]
 
+        # Monitor-only: report risk, never enforce. Required while the detector
+        # is not validated on clean labels (see results/misactbench_gold_eval.json).
+        if self.monitor_only:
+            decision_action = "MONITOR"
         # Get gate decision
-        if self.gate:
+        elif self.gate:
             gate_output = self.gate.get_action(risk_score, category_idx, objectness, deterministic=True)
             decision_action = gate_output  # ALLOW, PAUSE, HARD_BLOCK
         else:
@@ -330,10 +343,52 @@ class SentinelWrapper:
             parts.append(f"Coordinates: {action.coordinates}")
         return " | ".join(parts)
 
+    def request_human_confirmation(
+        self,
+        decision: SentinelDecision,
+        action: AgentAction,
+        frame: Optional[Image.Image] = None,
+    ) -> bool:
+        """
+        Request human approval for a paused action.
+        Calls self.on_pause callback if registered; otherwise prompts the user interactively
+        if running in a terminal (TTY), or safely halts (returns False) in automated/headless runs.
+        """
+        if self.on_pause is not None:
+            return bool(self.on_pause(decision, action))
+
+        import sys
+        if sys.stdin is not None and sys.stdin.isatty():
+            print("\n" + "=" * 65)
+            print("🚨 SENTINEL-Vision 3-Tier Gate: ACTION SUSPECTED & PAUSED")
+            print("=" * 65)
+            print(f"Action     : {action.action_type}")
+            if action.selector:
+                print(f"Selector   : {action.selector}")
+            if action.coordinates:
+                print(f"Coords     : {action.coordinates}")
+            print(f"Risk Score : {decision.risk_score:.3f}")
+            print(f"Category   : {decision.category} (confidence: {decision.category_conf:.1%})")
+            print(f"Reasoning  : {decision.reasoning}")
+            print("=" * 65)
+            try:
+                ans = input("Approve this action to proceed? [y/N]: ").strip().lower()
+                approved = ans in ("y", "yes")
+                logger.info(f"Human decision: {'APPROVED' if approved else 'REJECTED'}")
+                return approved
+            except (EOFError, KeyboardInterrupt):
+                logger.info("Human decision: ABORTED (no input)")
+                return False
+        else:
+            logger.warning(
+                f"Action PAUSED for human approval ({decision.reasoning}), running non-interactively without on_pause callback. Halting execution for safety."
+            )
+            return False
+
     def intercept_action(self, action: AgentAction, frame: Optional[Image.Image] = None) -> Tuple[SentinelDecision, bool]:
         """
         Intercept an agent action. Returns (decision, should_proceed).
-        should_proceed=False means action should be blocked.
+        should_proceed=False means action is blocked or pending unapproved human pause.
         """
         # Capture current screen if buffer is empty or explicit frame passed
         if frame is not None:
@@ -359,9 +414,8 @@ class SentinelWrapper:
                 # Allow override
                 should_proceed = self.on_block(decision, action)
         elif decision.action == "PAUSE":
-            # In PAUSE mode, wait for human confirmation
-            # For now, proceed but log warning
-            logger.warning(f"PAUSE: {decision.reasoning}")
+            # Suspected action: pause and await human approval
+            should_proceed = self.request_human_confirmation(decision, action, frame)
 
         return decision, should_proceed
 
@@ -380,7 +434,14 @@ class SentinelWrapper:
             if self.on_block:
                 should_proceed = self.on_block(decision, action)
         elif decision.action == "PAUSE":
-            logger.warning(f"PAUSE: {decision.reasoning}")
+            if self.on_pause:
+                res = self.on_pause(decision, action)
+                if asyncio.iscoroutine(res):
+                    should_proceed = await res
+                else:
+                    should_proceed = bool(res)
+            else:
+                should_proceed = self.request_human_confirmation(decision, action)
 
         return decision, should_proceed
 

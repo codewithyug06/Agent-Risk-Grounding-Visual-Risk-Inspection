@@ -47,9 +47,9 @@ def mine_hard_examples(
     model.eval()
     val_loader = DataLoader(
         val_dataset,
-        batch_size=config.training.get("batch_size", 16),
+        batch_size=32,
         shuffle=False,
-        num_workers=config.training.get("num_workers", 4),
+        num_workers=0,
         pin_memory=True,
         collate_fn=collate_frame_windows,
     )
@@ -112,24 +112,44 @@ def train_stage_c(config: DictConfig) -> DictConfig:
     stage_config = curriculum_config["stage_c"]
 
     data_config = load_config("data.yaml")
+    cli_num_epochs = config.get("num_epochs")
+    cli_resume = config.get("resume_from")
+    cli_lr = config.get("learning_rate")
+
     OmegaConf.set_struct(config, False)
     config = OmegaConf.merge(config, data_config, stage_config)
     config.stage_name = "stage_c"
+
     if "num_epochs" in stage_config:
         config.training.epochs = stage_config["num_epochs"]
+    if cli_num_epochs is not None:
+        config.training.epochs = int(cli_num_epochs)
+        config.num_epochs = int(cli_num_epochs)
+
+    if "learning_rate" in stage_config:
+        config.training.learning_rate = stage_config["learning_rate"]
+    if cli_lr is not None:
+        config.training.learning_rate = float(cli_lr)
+        config.learning_rate = float(cli_lr)
+
+    if cli_resume is not None:
+        config.resume_from = cli_resume
 
     device = config.get("device", "cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
 
-    stage_b_checkpoint = config.get("stage_b_checkpoint", "checkpoints/stage_b/best.pt")
-    logger.info(f"Loading Stage B checkpoint: {stage_b_checkpoint}")
+    base_checkpoint = config.get("stage_b_checkpoint", "checkpoints/stage_b/best.pt")
+    if config.get("resume_from"):
+        resume_cand = str(config.get("resume_from"))
+        import os
+        if os.path.exists(resume_cand):
+            base_checkpoint = resume_cand
 
-    # As in Stage B: build the model from the checkpoint's own saved config,
-    # not the caller-supplied config, to avoid architecture mismatches.
-    model = SentinelModel.from_pretrained(stage_b_checkpoint)
+    logger.info(f"Loading checkpoint weights from: {base_checkpoint}")
+    model = SentinelModel.from_pretrained(base_checkpoint)
     model = model.to(device)
     model.unfreeze_backbone()
-    logger.info("Stage B weights loaded, full model unfrozen for Stage C")
+    logger.info("Model weights loaded and full model unfrozen for Stage C")
 
     logger.info("Loading datasets...")
     train_transform = create_train_transform(OmegaConf.to_container(config))
@@ -183,12 +203,13 @@ def train_stage_c(config: DictConfig) -> DictConfig:
         dataset_stats=dataset_stats,
     )
 
+    start_epoch = 1
     resume_path = config.get("resume_from", None)
     if resume_path:
         start_epoch = trainer.resume_from_checkpoint(resume_path)
         logger.info(f"Resumed from epoch {start_epoch}")
 
-    results = trainer.train()
+    results = trainer.train(start_epoch=start_epoch)
 
     logger.info("Stage C training completed!")
     logger.info(f"Best val_recall_harmful: {results['best_metric']:.4f}")

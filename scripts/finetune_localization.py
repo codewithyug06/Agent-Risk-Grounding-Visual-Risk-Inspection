@@ -186,10 +186,10 @@ def save_sample_images(model, val_loader, device, out_dir: Path, n_samples: int 
 
 def main():
     parser = argparse.ArgumentParser(description="Dedicated localization fine-tuning for SENTINEL-Vision.")
-    parser.add_argument("--checkpoint", default="checkpoints/stage_c/best.pt")
+    parser.add_argument("--checkpoint", default="checkpoints/stage_c/best_loc.pt")
     parser.add_argument("--output-dir", default="checkpoints/localization_finetune")
-    parser.add_argument("--epochs", type=int, default=15)
-    parser.add_argument("--batch-size", type=int, default=4)
+    parser.add_argument("--epochs", type=int, default=5)
+    parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--lr", type=float, default=1e-5)
     parser.add_argument("--device", default=None)
     args = parser.parse_args()
@@ -207,11 +207,13 @@ def main():
 
     train_loader = DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=True,
-        num_workers=1, collate_fn=collate_frame_windows, drop_last=True,
+        num_workers=0, collate_fn=collate_frame_windows, drop_last=True,
+        pin_memory=True,
     )
     val_loader = DataLoader(
         val_dataset, batch_size=args.batch_size, shuffle=False,
-        num_workers=1, collate_fn=collate_frame_windows,
+        num_workers=0, collate_fn=collate_frame_windows,
+        pin_memory=True,
     )
 
     loss_fn = AnchorMatchedLocalizationLoss(giou_weight=1.0, l1_weight=0.5, obj_weight=1.0)
@@ -224,6 +226,8 @@ def main():
     metrics_csv = out_dir / "metrics.csv"
     best_iou = -1.0
 
+    use_amp = device.startswith("cuda") and torch.cuda.is_bf16_supported()
+
     for epoch in range(1, args.epochs + 1):
         model.train()
         total_loss = 0.0
@@ -232,15 +236,25 @@ def main():
             frames = batch["frames"].to(device)
             gt_bbox = batch["bbox"].to(device)
             has_bbox = batch["has_bbox"].to(device)
+            gt_bbox_pixel = gt_bbox * model.image_size
 
             optimizer.zero_grad()
-            out = model(frames)
-            gt_bbox_pixel = gt_bbox * model.image_size
-            loss_dict = loss_fn(
-                out["bbox_pred_grid"], out["objectness_logits_grid"], anchors,
-                gt_bbox_pixel, has_bbox=has_bbox, image_size=model.image_size,
-            )
-            loss = loss_dict["total"]
+            if use_amp:
+                with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+                    out = model(frames, gt_bbox_pixel=gt_bbox_pixel)
+                    loss_dict = loss_fn(
+                        out["bbox_pred_grid"], out["objectness_logits_grid"], anchors,
+                        gt_bbox_pixel, has_bbox=has_bbox, image_size=model.image_size,
+                    )
+                    loss = loss_dict["total"]
+            else:
+                out = model(frames, gt_bbox_pixel=gt_bbox_pixel)
+                loss_dict = loss_fn(
+                    out["bbox_pred_grid"], out["objectness_logits_grid"], anchors,
+                    gt_bbox_pixel, has_bbox=has_bbox, image_size=model.image_size,
+                )
+                loss = loss_dict["total"]
+
             loss.backward()
             torch.nn.utils.clip_grad_norm_(trainable_params, 1.0)
             optimizer.step()

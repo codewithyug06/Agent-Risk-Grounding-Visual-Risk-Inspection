@@ -1,0 +1,14 @@
+{
+  "timestamp": "2026-10-14T13:42:53.862724",
+  "stage_name": "stage_c_clip_frozen",
+  "total_epochs_trained": 15,
+  "total_training_duration_seconds": 17049.68,
+  "device": "cuda",
+  "peak_harm_recall": 0.5306,
+  "peak_precision": 0.4738,
+  "peak_harm_f1": 0.456,
+  "peak_localization_iou": 0.1374,
+  "peak_category_accuracy": 0.8487,
+  "final_train_loss": 3.46564,
+  "final_val_loss": 5.18024
+}

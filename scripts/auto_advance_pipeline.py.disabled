@@ -1,0 +1,200 @@
+#!/usr/bin/env python3
+"""
+Autonomous Multi-Stage Pipeline Advancer for SENTINEL-Vision / ARG-VRI 2.0.
+
+Automatically chains:
+  Wait for Stage A to finish -> Stage B -> Stage C -> Localization -> Full Eval Suite.
+Runs seamlessly in the background and writes real-time logs to auto_pipeline.log.
+"""
+
+import json
+import logging
+import os
+import subprocess
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+LOG_FILE = ROOT / "auto_pipeline.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(LOG_FILE, mode="a", encoding="utf-8"),
+    ],
+)
+logger = logging.getLogger("AutoPipeline")
+
+
+def run_command(cmd, desc):
+    """Execute command and stream output."""
+    logger.info("=" * 75)
+    logger.info(f"STARTING: {desc}")
+    logger.info(f"CMD: {' '.join(str(c) for c in cmd)}")
+    logger.info("=" * 75)
+    start_t = time.time()
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(ROOT),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        encoding="utf-8",
+        errors="replace",
+    )
+    for line in proc.stdout:
+        line_s = line.strip()
+        if line_s:
+            logger.info(f"[{desc}] {line_s}")
+    proc.wait()
+    dur = time.time() - start_t
+    if proc.returncode != 0:
+        logger.error(f"FAILED: {desc} exited with code {proc.returncode} after {dur:.1f}s")
+        raise RuntimeError(f"{desc} failed with exit code {proc.returncode}")
+    logger.info(f"SUCCESS: {desc} completed in {dur:.1f}s ({dur/60:.2f} mins)")
+    return dur
+
+
+def wait_for_stage_a():
+    """Waits for active Stage A process to complete and verify best.pt."""
+    logger.info("Checking status of Stage A training...")
+    ckpt_a = ROOT / "checkpoints" / "stage_a" / "best.pt"
+    latest_a = ROOT / "checkpoints" / "stage_a" / "latest.pt"
+
+    # Monitor Stage A loop
+    while True:
+        # Check if train_stageA process is still running
+        try:
+            out = subprocess.check_output(
+                'powershell "Get-Process -Name python -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"',
+                shell=True,
+                text=True,
+            )
+            pids = [p.strip() for p in out.splitlines() if p.strip()]
+        except Exception:
+            pids = []
+
+        # Check latest epoch in metrics.csv
+        metrics_csv = ROOT / "checkpoints" / "stage_a" / "metrics.csv"
+        last_epoch = 0
+        if metrics_csv.exists():
+            try:
+                with open(metrics_csv, "r", encoding="utf-8") as f:
+                    lines = [l.strip() for l in f if l.strip()]
+                    if len(lines) > 1:
+                        last_epoch = int(lines[-1].split(",")[0])
+            except Exception:
+                pass
+
+        logger.info(f"Stage A monitoring: last_epoch={last_epoch}, running_python_pids={len(pids)}")
+
+        # If Stage A reached epoch 10 or process finished and best.pt exists
+        if last_epoch >= 10 and ckpt_a.exists():
+            logger.info("Stage A successfully reached epoch 10 and best.pt is saved!")
+            time.sleep(10)
+            break
+
+        time.sleep(45)
+
+
+def main():
+    logger.info("*" * 75)
+    logger.info("AUTONOMOUS PIPELINE CONTROLLER INITIALIZED")
+    logger.info("*" * 75)
+
+    timings = {}
+
+    # Step 1: Wait for Stage A
+    wait_for_stage_a()
+
+    # Step 2: Run Stage B (Financial & Privacy)
+    logger.info("Initiating Stage B Training...")
+    cmd_b = [
+        sys.executable, "-m", "src.training.train_stageB",
+        "device=cuda",
+        "training.batch_size=8",
+        "training.epochs=5",
+        "+synthetic_injection_dir=data/__no_synthetic__",
+    ]
+    timings["stage_b"] = run_command(cmd_b, "Stage B Training")
+
+    # Step 3: Run Stage C (Contextual Edge Cases + MisActBench Gold)
+    logger.info("Initiating Stage C Training...")
+    cmd_c = [
+        sys.executable, "-m", "src.training.train_stageC",
+        "device=cuda",
+        "training.batch_size=8",
+        "training.epochs=8",
+        "+synthetic_injection_dir=data/__no_synthetic__",
+    ]
+    timings["stage_c"] = run_command(cmd_c, "Stage C Training")
+
+    # Step 4: Dedicated Localization Fine-Tuning
+    logger.info("Initiating Dedicated Localization Fine-Tuning...")
+    loc_ckpt = ROOT / "checkpoints" / "stage_c" / "best.pt"
+    if not loc_ckpt.exists():
+        loc_ckpt = ROOT / "checkpoints" / "stage_c" / "latest.pt"
+    if not loc_ckpt.exists():
+        loc_ckpt = ROOT / "checkpoints" / "stage_c" / "best_loc.pt"
+    cmd_loc = [
+        sys.executable, "scripts/finetune_localization.py",
+        "--checkpoint", str(loc_ckpt),
+        "--epochs", "4",
+        "--batch-size", "8",
+        "--device", "cuda",
+    ]
+    timings["localization"] = run_command(cmd_loc, "Localization Fine-Tuning")
+
+    # Step 5: Full Evaluation Benchmark Suite
+    logger.info("Running Full Evaluation Benchmark Suite...")
+    eval_ckpt = ROOT / "checkpoints" / "localization_finetune" / "best.pt"
+    if not eval_ckpt.exists():
+        eval_ckpt = ROOT / "checkpoints" / "stage_c" / "best_loc.pt"
+
+    # Final test split metrics
+    cmd_eval_final = [
+        sys.executable, "scripts/evaluate_final.py",
+        "--checkpoint", str(eval_ckpt),
+        "--out", "results/final_test_metrics_best_loc.json",
+    ]
+    timings["eval_final"] = run_command(cmd_eval_final, "Final Test Split Evaluation")
+
+    # MisActBench gold evaluation
+    cmd_eval_misact = [
+        sys.executable, "scripts/eval_misactbench_gold.py",
+        "--checkpoint", str(eval_ckpt),
+        "--out", "results/misactbench_gold_eval.json",
+    ]
+    timings["eval_misact"] = run_command(cmd_eval_misact, "MisActBench Gold Evaluation")
+
+    # ScreenSpot-v2 evaluation
+    cmd_eval_screenspot = [
+        sys.executable, "scripts/eval_screenspot.py",
+        "--checkpoint", str(eval_ckpt),
+        "--out", "results/screenspot_v2_point_accuracy.json",
+    ]
+    timings["eval_screenspot"] = run_command(cmd_eval_screenspot, "ScreenSpot-v2 Evaluation")
+
+    # Save summary
+    summary_path = ROOT / "results" / "autonomous_pipeline_summary.json"
+    with open(summary_path, "w", encoding="utf-8") as f:
+        json.dump({
+            "completed_at": datetime.now().isoformat(),
+            "timings_seconds": timings,
+            "total_minutes": sum(timings.values()) / 60,
+        }, f, indent=2)
+
+    logger.info("=" * 75)
+    logger.info("ALL PIPELINE STAGES COMPLETED AUTONOMOUSLY!")
+    logger.info(f"Summary saved to: {summary_path}")
+    logger.info("=" * 75)
+
+
+if __name__ == "__main__":
+    main()
