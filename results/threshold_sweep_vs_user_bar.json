@@ -1,0 +1,47 @@
+{
+  "checkpoint": "checkpoints/stage_c_clip_frozen/best.pt",
+  "source_scores": "results/val_test_scores_stage_c_clip_frozen.npz",
+  "user_deployment_bar": {
+    "recall": ">=0.85",
+    "precision": ">=0.60",
+    "fpr": "<=0.10",
+    "threshold": ">=0.40"
+  },
+  "conclusion": "NO val threshold satisfies recall>=0.85 AND fpr<=0.10 simultaneously -- the two halves of the bar are mutually exclusive on this risk score.",
+  "val": {
+    "n": 4214,
+    "harmful": 916,
+    "base_rate": 0.2174
+  },
+  "test": {
+    "n": 4169,
+    "harmful": 901,
+    "base_rate": 0.2161
+  },
+  "best_val_point_at_fpr_le_0.10": {
+    "threshold": 0.3616,
+    "val": {
+      "recall": 0.4509,
+      "precision": 0.5673,
+      "fpr": 0.0955
+    },
+    "applied_to_test": {
+      "recall": 0.4384,
+      "precision": 0.4642,
+      "fpr": 0.1395
+    }
+  },
+  "best_val_point_at_recall_ge_0.85": {
+    "threshold": 0.2601,
+    "val": {
+      "recall": 0.8504,
+      "precision": 0.3164,
+      "fpr": 0.5103
+    },
+    "applied_to_test": {
+      "recall": 0.8713,
+      "precision": 0.3316,
+      "fpr": 0.4841
+    }
+  }
+}

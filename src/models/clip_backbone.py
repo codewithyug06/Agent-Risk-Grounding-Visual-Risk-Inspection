@@ -36,6 +36,7 @@ class ClipFrozenBackbone(nn.Module):
         model_name: str = "ViT-B-16-quickgelu",
         pretrained: str = "openai",
         temporal_pool: str = "mean",  # "mean" or "attn"
+        with_text_tower: bool = False,
     ):
         super().__init__()
         if open_clip is None:
@@ -49,6 +50,21 @@ class ClipFrozenBackbone(nn.Module):
         for p in self.visual.parameters():
             p.requires_grad_(False)
         self.visual.eval()
+
+        # Optional paired text tower (see plan: and-once-again-go-velvet-fairy.md, Phase 3).
+        # `create_model_and_transforms` already builds this internally; previously it was
+        # discarded. Kept frozen, same as the vision tower, since there's no labeled text
+        # data to fine-tune it on -- only the fusion head downstream is trainable.
+        self.with_text_tower = with_text_tower
+        if with_text_tower:
+            self.text_model = model  # keep the full CLIP model for encode_text()
+            self.tokenizer = open_clip.get_tokenizer(model_name)
+            for p in self.text_model.parameters():
+                p.requires_grad_(False)
+            self.text_model.eval()
+        else:
+            self.text_model = None
+            self.tokenizer = None
 
         # CLIP's own normalization (differs from the rest of the pipeline's ImageNet stats).
         mean = torch.tensor(preprocess.transforms[-1].mean).view(1, 3, 1, 1)
@@ -93,6 +109,52 @@ class ClipFrozenBackbone(nn.Module):
         query = self.temporal_query.expand(B, -1, -1)
         pooled, _ = self.temporal_attn(query, feats, feats)
         return pooled.squeeze(1)
+
+    @torch.no_grad()
+    def encode_text(self, texts: list) -> torch.Tensor:
+        """
+        texts: list of B raw strings (e.g. the agent's action/instruction text).
+        Returns: (B, embed_dim) frozen CLIP text embedding. Empty strings get a
+        zero vector (not run through the tower) so missing text is a well-defined
+        all-zero signal to the fusion head rather than an arbitrary embedding of "".
+        """
+        if not self.with_text_tower:
+            raise RuntimeError("encode_text called but with_text_tower=False")
+        device = self.visual.conv1.weight.device if hasattr(self.visual, "conv1") else next(self.visual.parameters()).device
+        non_empty = [(i, t) for i, t in enumerate(texts) if t and t.strip()]
+        out = torch.zeros(len(texts), self.embed_dim, device=device)
+        if non_empty:
+            idxs, strs = zip(*non_empty)
+            tokens = self.tokenizer(list(strs)).to(device)
+            feats = self.text_model.encode_text(tokens).float()
+            out[list(idxs)] = feats
+        return out
+
+
+class GatedTextVisionFusion(nn.Module):
+    """
+    Learned gated fusion of frozen CLIP image + text embeddings.
+
+    Naive averaging/concatenation of frozen CLIP embeddings is a known-weak baseline
+    for this kind of task (GatedCLIP on hateful-memes detection reports only 0.49 AUROC --
+    chance level -- from simple averaging; see plan and-once-again-go-velvet-fairy.md,
+    Phase 3 research notes). This learns a per-sample gate instead of a fixed mixing weight.
+    """
+
+    def __init__(self, embed_dim: int):
+        super().__init__()
+        self.gate = nn.Sequential(
+            nn.Linear(embed_dim * 2, embed_dim),
+            nn.GELU(),
+            nn.Linear(embed_dim, embed_dim),
+            nn.Sigmoid(),
+        )
+        self.out_norm = nn.LayerNorm(embed_dim)
+
+    def forward(self, image_emb: torch.Tensor, text_emb: torch.Tensor) -> torch.Tensor:
+        g = self.gate(torch.cat([image_emb, text_emb], dim=-1))
+        fused = g * image_emb + (1 - g) * text_emb
+        return self.out_norm(fused)
 
 
 class ClipLinearRiskHead(nn.Module):

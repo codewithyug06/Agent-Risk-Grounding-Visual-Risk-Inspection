@@ -382,6 +382,8 @@ class SentinelDataset(Dataset):
             "trajectory_idx": traj_idx,
             "action_idx": action_idx,
             "action": target_pair.action,
+            "instruction": (target_pair.metadata or {}).get("instruction", ""),
+            "misactbench_category": (target_pair.metadata or {}).get("misactbench_category"),
         }
 
 

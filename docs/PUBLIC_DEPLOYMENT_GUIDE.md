@@ -168,8 +168,8 @@ For production environments requiring sub-200ms latency without dedicated GPUs:
 python scripts/export_onnx.py --checkpoint checkpoints/stage_c/best_loc.pt --output onnx_models/
 ```
 
-- **FP32 ONNX Runtime (CPU)**: 198.2 ms mean latency (5.0 FPS) — Recommended for general CPU deployments.
-- **INT8 Dynamic Quantization**: 366.7 ms mean latency — Recommended for CPUs with AVX-512 VNNI support.
+- **FP32 ONNX Runtime (CPU)**: 159.4 ms mean latency (6.3 FPS) — Recommended for general CPU deployments.
+- **INT8 Dynamic Quantization**: 369.8 ms mean latency — slower than FP32 on this CPU (no AVX-512 VNNI); only consider on hardware confirmed to have VNNI acceleration.
 
 ---
 

@@ -1,0 +1,44 @@
+{
+  "checkpoint": "checkpoints/stage_c_clip_frozen_text/best.pt",
+  "val": {
+    "n": 177,
+    "harmful": 79
+  },
+  "test": {
+    "n": 200,
+    "harmful": 82
+  },
+  "user_bar": {
+    "recall": 0.85,
+    "precision": 0.6,
+    "fpr": 0.1
+  },
+  "any_val_threshold_meets_full_bar": false,
+  "note": "No single val threshold satisfies all three bar items simultaneously.",
+  "best_val_point_at_recall_ge_0.85": {
+    "threshold": 0.279,
+    "val": {
+      "recall": 0.8608,
+      "precision": 0.6126,
+      "fpr": 0.4388
+    },
+    "applied_to_test": {
+      "recall": 0.9024,
+      "precision": 0.6016,
+      "fpr": 0.4153
+    }
+  },
+  "best_val_point_at_fpr_le_0.10": {
+    "threshold": 0.5409,
+    "val": {
+      "recall": 0.5696,
+      "precision": 0.8333,
+      "fpr": 0.0918
+    },
+    "applied_to_test": {
+      "recall": 0.4268,
+      "precision": 0.7292,
+      "fpr": 0.1102
+    }
+  }
+}

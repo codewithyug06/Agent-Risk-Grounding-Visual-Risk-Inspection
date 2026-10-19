@@ -1,0 +1,117 @@
+{
+  "epoch_5.pt": {
+    "pre_registered_threshold": 0.0877,
+    "test_at_pre_registered": {
+      "recall": 1.0,
+      "precision": 0.4121,
+      "fpr": 0.9915,
+      "auprc": 0.7272,
+      "auroc": 0.7632
+    },
+    "best_recall_ge_0.85_point": {
+      "threshold": 0.4027,
+      "val": {
+        "recall": 0.8608,
+        "precision": 0.6018,
+        "fpr": 0.4592
+      },
+      "test": {
+        "recall": 0.8171,
+        "precision": 0.5537,
+        "fpr": 0.4576
+      }
+    }
+  },
+  "epoch_10.pt": {
+    "pre_registered_threshold": 0.0132,
+    "test_at_pre_registered": {
+      "recall": 1.0,
+      "precision": 0.4141,
+      "fpr": 0.9831,
+      "auprc": 0.7831,
+      "auroc": 0.8207
+    },
+    "best_recall_ge_0.85_point": {
+      "threshold": 0.1472,
+      "val": {
+        "recall": 0.8734,
+        "precision": 0.5349,
+        "fpr": 0.6122
+      },
+      "test": {
+        "recall": 0.9512,
+        "precision": 0.5132,
+        "fpr": 0.6271
+      }
+    }
+  },
+  "best.pt": {
+    "pre_registered_threshold": 0.0428,
+    "test_at_pre_registered": {
+      "recall": 1.0,
+      "precision": 0.4249,
+      "fpr": 0.9407,
+      "auprc": 0.7521,
+      "auroc": 0.8196
+    },
+    "best_recall_ge_0.85_point": {
+      "threshold": 0.279,
+      "val": {
+        "recall": 0.8608,
+        "precision": 0.6126,
+        "fpr": 0.4388
+      },
+      "test": {
+        "recall": 0.9024,
+        "precision": 0.6016,
+        "fpr": 0.4153
+      }
+    }
+  },
+  "best_loc.pt": {
+    "pre_registered_threshold": 0.0428,
+    "test_at_pre_registered": {
+      "recall": 1.0,
+      "precision": 0.4249,
+      "fpr": 0.9407,
+      "auprc": 0.7521,
+      "auroc": 0.8196
+    },
+    "best_recall_ge_0.85_point": {
+      "threshold": 0.279,
+      "val": {
+        "recall": 0.8608,
+        "precision": 0.6126,
+        "fpr": 0.4388
+      },
+      "test": {
+        "recall": 0.9024,
+        "precision": 0.6016,
+        "fpr": 0.4153
+      }
+    }
+  },
+  "epoch_11_final.pt": {
+    "pre_registered_threshold": 0.0027,
+    "test_at_pre_registered": {
+      "recall": 1.0,
+      "precision": 0.4121,
+      "fpr": 0.9915,
+      "auprc": 0.773,
+      "auroc": 0.8136
+    },
+    "best_recall_ge_0.85_point": {
+      "threshold": 0.2095,
+      "val": {
+        "recall": 0.8608,
+        "precision": 0.6239,
+        "fpr": 0.4184
+      },
+      "test": {
+        "recall": 0.9024,
+        "precision": 0.5649,
+        "fpr": 0.4831
+      }
+    }
+  }
+}

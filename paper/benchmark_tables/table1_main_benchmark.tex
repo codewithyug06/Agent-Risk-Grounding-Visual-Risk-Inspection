@@ -1,6 +1,6 @@
 \begin{table}[t]
 \centering
-\caption{\textbf{Main Safety Benchmark Results.} Empirical evaluation on the combined evaluation suite ($N=3{,}167$ samples, 2,507 real-world web interaction sequences + 660 DOM-grounded synthetic injections) evaluated against the Stage C checkpoint (\texttt{checkpoints/stage\_c/best.pt}) and trained PPO decision gate (\texttt{checkpoints/gate\_rl.pt}).}
+\caption{\textbf{Main Safety Benchmark Results.} Empirical evaluation evaluated against the Stage C checkpoint (\texttt{checkpoints/stage\_c/best.pt}). Sample count: \texttt{paper/benchmark\_results.json}'s own \texttt{real\_results.validation\_set.n\_samples} records $N=2{,}785$ for this checkpoint, which does not match the $N=3{,}167$ figure ($2{,}507 + 660$) previously stated here -- flagged as an unresolved discrepancy rather than silently repeated. \textbf{The ``PPO Gate'' row's numbers are UNVERIFIED}: \texttt{checkpoints/gate\_rl.pt} does not exist in this repo, and the only script that evaluates a PPO gate (\texttt{src/eval/run\_benchmark.py}) would skip gate evaluation entirely without that file -- these numbers cannot have come from running current code against a checkpoint that currently exists; shown for historical reference only, not as a verified finding that the gate is net-negative. ``Rule-based keyword-cue baseline'' is similarly not an independent baseline (see \texttt{benchmark\_results.json}'s \texttt{warning} field): the same keyword rule is also how the real-data weak labels it is scored against were assigned, so its perfect 100\%/100\%/0\% score is tautological.}
 \label{tab:main_benchmark}
 \resizebox{\textwidth}{!}{
 \begin{tabular}{lcccccc}
@@ -8,10 +8,10 @@
 \textbf{Method} & \textbf{Harm Recall ($\uparrow$)} & \textbf{Harm Precision ($\uparrow$)} & \textbf{Harm F1 ($\uparrow$)} & \textbf{FNR ($\downarrow$)} & \textbf{FPR ($\downarrow$)} & \textbf{IoU@0.5 ($\uparrow$)} \\
 \midrule
 Random Threshold Baseline & 49.19\% & 19.10\% & 0.275 & 50.81\% & 50.73\% & -- \\
-Rule-based keyword-cue baseline & 100.0\% & 100.0\% & 1.000 & 0.00\% & 0.00\% & -- \\
+Rule-based keyword-cue (tautological, not a real baseline) & 100.0\% & 100.0\% & 1.000 & 0.00\% & 0.00\% & -- \\
 Single-Frame ViT ($k=1$) & 48.46\% & 13.74\% & 0.214 & 51.54\% & 35.20\% & 0.000 \\
-SENTINEL-Vision (No Gate) & \textbf{74.35\%} & \textbf{52.51\%} & \textbf{0.616} & \textbf{25.65\%} & \textbf{16.37\%} & \textbf{0.036} \\
-\textbf{SENTINEL-Vision (Full, $k=6$ + PPO Gate)} & 64.03\% & 14.05\% & 0.230 & 35.97\% & 95.37\% & \textbf{0.036} \\
+\textbf{SENTINEL-Vision (No Gate) -- best verified result} & \textbf{74.35\%} & \textbf{52.51\%} & \textbf{0.616} & \textbf{25.65\%} & \textbf{16.37\%} & \textbf{0.036} \\
+SENTINEL-Vision (Full, $k=6$ + PPO Gate) -- UNVERIFIED, no checkpoint exists & 64.03\% & 14.05\% & 0.230 & 35.97\% & 95.37\% & 0.036 \\
 \bottomrule
 \end{tabular}
 }

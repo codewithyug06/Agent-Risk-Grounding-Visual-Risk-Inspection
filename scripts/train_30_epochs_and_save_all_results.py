@@ -71,7 +71,7 @@ for d in [RESULTS_DIR, EPOCH_LOGS_DIR, METRICS_DIR, PLOTS_DIR, VIS_PREDS_DIR]:
 
 
 def get_training_config(epochs: int = 30, batch_size: int = 8, device: str = "cuda",
-                         risk_backbone: str = "scratch"):
+                         risk_backbone: str = "scratch", use_text_fusion: bool = False):
     """Build unified Hydra/OmegaConf dictionary for 30-epoch training.
 
     risk_backbone="clip_frozen" (Phase C of plan and-once-again-go-velvet-fairy.md):
@@ -181,6 +181,12 @@ def get_training_config(epochs: int = 30, batch_size: int = 8, device: str = "cu
             "num_categories": 5,
             "num_layers": 2,  # 2-layer MLP head for superior non-linear capacity
             "dropout": 0.1,
+            # Phase 3 of plan and-once-again-go-velvet-fairy.md: feed the agent's own
+            # action/instruction text (already in batch["actions"], previously discarded)
+            # through a frozen CLIP text tower + trainable gated fusion head, alongside
+            # the frozen vision tower. Targets the ~84% of MisActBench's harmful population
+            # (categories defined relative to text, not visible in a screenshot alone).
+            "use_text_fusion": use_text_fusion,
         }
 
     config = OmegaConf.create(config_dict)
@@ -346,6 +352,7 @@ def run_full_30_epoch_training():
         logger.info(f"GPU Model: {torch.cuda.get_device_name(0)}")
 
     use_clip_frozen = "--clip_frozen" in sys.argv
+    use_text_fusion = "--text_fusion" in sys.argv
     risk_backbone = "clip_frozen" if use_clip_frozen else "scratch"
     # Frozen backbone -> only a small head trains -> fast epochs, fewer needed.
     default_epochs = 15 if use_clip_frozen else 30
@@ -353,11 +360,15 @@ def run_full_30_epoch_training():
     # OS for system-wide memory pressure (not a training bug - see logs/stage_c_clip_frozen_run.log).
     default_batch_size = 4 if use_clip_frozen else 8
     config = get_training_config(epochs=default_epochs, batch_size=default_batch_size, device=device,
-                                  risk_backbone=risk_backbone)
+                                  risk_backbone=risk_backbone, use_text_fusion=use_text_fusion)
     if use_clip_frozen:
         config.training.learning_rate = 1e-3
         logger.info("risk_backbone=clip_frozen: training only the CLIP linear-probe head "
                     f"({default_epochs} epochs, lr={config.training.learning_rate})")
+    if use_text_fusion:
+        logger.info("clip_backbone.use_text_fusion=True: action/instruction text is now fed "
+                     "through a frozen CLIP text tower + trainable gated fusion head (Phase 3 "
+                     "of plan and-once-again-go-velvet-fairy.md).")
 
     # 1. Prepare Datasets & Loaders
     logger.info("Initializing Data Loaders (16,726 Trajectory Samples)...")
@@ -455,7 +466,10 @@ def run_full_30_epoch_training():
         eta_min=1e-6,
     )
 
-    stage_name = "stage_c_clip_frozen" if use_clip_frozen else "stage_b_30epochs"
+    if use_clip_frozen:
+        stage_name = "stage_c_clip_frozen_text" if use_text_fusion else "stage_c_clip_frozen"
+    else:
+        stage_name = "stage_b_30epochs"
 
     trainer = SentinelTrainer(
         config=config,

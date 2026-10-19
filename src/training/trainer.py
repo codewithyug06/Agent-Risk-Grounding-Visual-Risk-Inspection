@@ -39,6 +39,19 @@ def _loc_mask(batch, device):
     """Supervise localization on all samples that provide a valid bounding box."""
     return batch["has_bbox"].float().to(device)
 
+
+def _combined_text(batch) -> Optional[List[str]]:
+    """Instruction + action, concatenated, for the text-fusion channel (plan
+    and-once-again-go-velvet-fairy.md, refinement after Phase 3): the raw action alone
+    is pyautogui code and never carries the user's original instruction, which is what
+    MisActBench's "Malicious instruction following" category (59% of its harmful labels)
+    is actually defined relative to."""
+    actions = batch.get("actions")
+    if actions is None:
+        return None
+    instructions = batch.get("instructions", [""] * len(actions))
+    return [f"{i} {a}".strip() for i, a in zip(instructions, actions)]
+
 class SentinelTrainer:
     """
     Main training loop for SENTINEL-Vision.
@@ -253,6 +266,7 @@ class SentinelTrainer:
                 predictions = self.model(
                     frames,
                     gt_bbox_pixel=targets["bbox"] * self.model.image_size,
+                    action_text=_combined_text(batch),
                 )
                 loss_dict = self.loss_fn(predictions, targets)
                 loss = loss_dict["total_loss"]
@@ -366,7 +380,7 @@ class SentinelTrainer:
                 autocast_ctx = autocast(enabled=self.mixed_precision)
 
             with autocast_ctx:
-                predictions = self.model(frames)
+                predictions = self.model(frames, action_text=_combined_text(batch))
                 loss_dict = self.loss_fn(predictions, targets)
 
             batch_size = frames.size(0)
@@ -572,7 +586,7 @@ class SentinelTrainer:
         with torch.no_grad():
             for batch in self.val_loader:
                 frames = batch["frames"].to(self.device)  # (B, k, C, H, W)
-                predictions = self.model(frames)
+                predictions = self.model(frames, action_text=_combined_text(batch))
 
                 last_frame = frames[:, -1]  # (B, C, H, W) — most recent frame in the window
                 risk_scores = predictions["risk_score"].squeeze(-1).cpu()

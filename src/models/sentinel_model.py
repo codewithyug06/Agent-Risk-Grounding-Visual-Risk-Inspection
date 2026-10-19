@@ -12,7 +12,7 @@ from .risk_head import RiskHead, create_risk_head
 from .localization_head import LocalizationHead, create_localization_head
 from .box_refiner import BoxRefiner
 from .heatmap_head import HeatmapHead
-from .clip_backbone import ClipFrozenBackbone, ClipLinearRiskHead
+from .clip_backbone import ClipFrozenBackbone, ClipLinearRiskHead, GatedTextVisionFusion
 from ..utils.checkpoint import load_checkpoint
 
 logger = logging.getLogger(__name__)
@@ -54,11 +54,20 @@ class SentinelModel(nn.Module):
         self.risk_backbone_mode = config.get("risk_backbone", "scratch")
         if self.risk_backbone_mode == "clip_frozen":
             clip_cfg = config.get("clip_backbone", {})
+            # use_text_fusion: opt-in (default off, so existing stage_c_clip_frozen
+            # checkpoints -- trained without the text tower/fusion head -- keep loading
+            # with strict=True). See plan and-once-again-go-velvet-fairy.md, Phase 3:
+            # feeds the action/instruction text (already present in batch["actions"],
+            # previously discarded) alongside pixels, via a frozen CLIP text tower +
+            # a small trainable gated fusion head.
+            self.use_text_fusion = clip_cfg.get("use_text_fusion", False)
             self.clip_backbone = ClipFrozenBackbone(
                 model_name=clip_cfg.get("model_name", "ViT-B-16-quickgelu"),
                 pretrained=clip_cfg.get("pretrained", "openai"),
                 temporal_pool=clip_cfg.get("temporal_pool", "mean"),
+                with_text_tower=self.use_text_fusion,
             )
+            self.text_fusion = GatedTextVisionFusion(self.clip_backbone.embed_dim) if self.use_text_fusion else None
             self.risk_head = ClipLinearRiskHead(
                 embed_dim=self.clip_backbone.embed_dim,
                 hidden_dim=clip_cfg.get("hidden_dim", 256),
@@ -68,6 +77,8 @@ class SentinelModel(nn.Module):
             )
         else:
             self.clip_backbone = None
+            self.text_fusion = None
+            self.use_text_fusion = False
             self.risk_head = create_risk_head(config)
 
         self.heatmap_head = HeatmapHead(
@@ -115,12 +126,17 @@ class SentinelModel(nn.Module):
         self,
         frame_window: torch.Tensor,
         gt_bbox_pixel: Optional[torch.Tensor] = None,
+        action_text: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         Full forward pass.
 
         Args:
             frame_window: (B, k, C, H, W) batch of frame windows
+            action_text: optional list of B raw action/instruction strings
+                (batch["actions"] from collate_frame_windows). Only consumed when
+                risk_backbone=clip_frozen and clip_backbone.use_text_fusion=true;
+                ignored otherwise (backward compatible with every existing caller).
 
         Returns:
             Dict with all predictions
@@ -144,6 +160,10 @@ class SentinelModel(nn.Module):
         # or (risk_backbone=clip_frozen) a frozen CLIP embedding + small trainable head.
         if self.clip_backbone is not None:
             clip_pooled = self.clip_backbone(frame_window)
+            if self.use_text_fusion and self.text_fusion is not None:
+                texts = action_text if action_text is not None else [""] * B
+                text_emb = self.clip_backbone.encode_text(texts).to(clip_pooled.dtype)
+                clip_pooled = self.text_fusion(clip_pooled, text_emb)
             risk_output = self.risk_head(clip_pooled)
         else:
             risk_output = self.risk_head(fused, cls_token)

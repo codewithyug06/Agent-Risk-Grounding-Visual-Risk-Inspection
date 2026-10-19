@@ -37,6 +37,8 @@ from src.data.augmentation import create_val_transform
 from src.data.frame_windowing import collate_frame_windows
 from src.utils.config import load_config
 
+SCREENSPOT_RESULTS_PATH = ROOT / "results" / "screenspot_v2_point_accuracy.json"
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("evaluate_production")
 
@@ -115,12 +117,22 @@ def evaluate_model_on_dataset(
 
 def main():
     parser = argparse.ArgumentParser(description="SENTINEL-Vision Production 3-Tier Gate Evaluation")
-    parser.add_argument("--checkpoint", default="checkpoints/stage_c/best.pt")
+    # Default matches README's documented canonical checkpoint, not an older/different one --
+    # a bare `python scripts/evaluate_3tier_production.py` must reproduce the README's numbers.
+    parser.add_argument("--checkpoint", default="checkpoints/stage_c_clip_frozen/best.pt")
     parser.add_argument("--loc-checkpoint", default=None)
     parser.add_argument("--out-json", default="results/production_evaluation_report.json")
     parser.add_argument("--out-md", default="results/production_evaluation_report.md")
     parser.add_argument("--device", default=None)
     parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--target-recall", type=float, default=0.92,
+                         help="Gate calibration target recall (val split only).")
+    parser.add_argument("--target-block-precision", type=float, default=0.75,
+                         help="Gate calibration target HARD_BLOCK precision (val split only).")
+    parser.add_argument("--save-scores", default=None,
+                         help="Optional .npz path to cache val/test risk scores+labels for "
+                              "cheap reuse by later threshold/gate experiments (no model "
+                              "inference needed to reload).")
     args = parser.parse_args()
 
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
@@ -140,7 +152,9 @@ def main():
     model = SentinelModel.from_pretrained(str(ckpt_path)).to(device)
     model.eval()
 
-    # Load Validation Dataset
+    # Load Validation Dataset (calibration split only -- thresholds are picked here,
+    # never reported here, to avoid evaluating a threshold on the same data it was
+    # chosen from).
     config = load_config("model_small.yaml")
     data_config = load_config("data.yaml")
     config = OmegaConf.merge(config, data_config)
@@ -153,10 +167,23 @@ def main():
         num_workers=0,
         collate_fn=collate_frame_windows,
     )
-    logger.info(f"Validation dataset size: {len(val_dataset)} samples")
+    logger.info(f"Calibration (val) dataset size: {len(val_dataset)} samples")
 
-    # Evaluate Model
-    eval_res = evaluate_model_on_dataset(model, val_loader, device=device)
+    # Load Test Dataset (held-out reporting split -- every metric in this report is
+    # computed here, using thresholds calibrated on val above, never on these rows).
+    test_dataset = build_combined_dataset(config, "test", val_transform)
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=0,
+        collate_fn=collate_frame_windows,
+    )
+    logger.info(f"Reporting (held-out test) dataset size: {len(test_dataset)} samples")
+
+    # Evaluate Model on both splits
+    calib_res = evaluate_model_on_dataset(model, val_loader, device=device)
+    eval_res = evaluate_model_on_dataset(model, test_loader, device=device)
     risk_scores = eval_res["scores"]
     risk_labels = eval_res["labels"]
     category_probs = eval_res["cat_probs"]
@@ -164,23 +191,35 @@ def main():
     raw_ious = eval_res["raw_ious"]
     stage1_ious = eval_res["stage1_ious"]
 
+    if args.save_scores:
+        save_path = ROOT / args.save_scores
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        np.savez(
+            save_path,
+            val_scores=calib_res["scores"], val_labels=calib_res["labels"],
+            test_scores=risk_scores, test_labels=risk_labels,
+        )
+        logger.info(f"Saved val/test scores+labels to {save_path} for cheap reuse "
+                    f"(no model inference needed to reload).")
+
     total_samples = len(risk_scores)
     harmful_mask = risk_labels == 1
     total_harmful = int(harmful_mask.sum())
     total_benign = total_samples - total_harmful
 
-    # Calibrate 3-Tier Gate
+    # Calibrate 3-Tier Gate on VAL ONLY
     gate = DecisionGate3Tier(tau_safe=0.16, tau_critical=0.60)
     calib = gate.calibrate(
-        risk_scores,
-        risk_labels,
-        target_recall=0.92,
-        target_block_precision=0.75,
+        calib_res["scores"],
+        calib_res["labels"],
+        target_recall=args.target_recall,
+        target_block_precision=args.target_block_precision,
     )
     tau_safe = calib["tau_safe"]
     tau_crit = calib["tau_critical"]
-    logger.info(f"Dynamic Gate Calibration: tau_safe={tau_safe:.3f}, tau_crit={tau_crit:.3f}")
+    logger.info(f"Gate calibrated on val: tau_safe={tau_safe:.3f}, tau_crit={tau_crit:.3f}")
 
+    # Report on TEST ONLY, using the val-calibrated thresholds above
     eval_3tier = gate.evaluate_dataset(risk_scores, risk_labels)
     eff_recall = eval_3tier["effective_safety_recall"]
     block_precision = eval_3tier["autonomous_block_precision"]
@@ -191,8 +230,13 @@ def main():
     allow_rate = total_allows / total_samples
     pause_rate = total_pauses / total_samples
     hard_block_rate = total_blocks / total_samples
+    flagged_rate = pause_rate + hard_block_rate  # PAUSE + HARD_BLOCK as % of all traffic
     harm_leaked = int(np.sum((risk_labels == 1) & (risk_scores < tau_safe)))
     harm_leakage_fnr = harm_leaked / max(1, total_harmful)
+    # FPR at the ALLOW/flagged boundary: fraction of BENIGN traffic that gets
+    # paused or blocked (not the same denominator as flagged_rate above, which is
+    # over all traffic) -- this is the FPR the user's deployment bar names.
+    benign_flagged_fpr = 1.0 - eval_3tier["autonomous_allow_rate"]
 
     # Multi-Class Category Accuracy
     pred_categories_raw = np.argmax(category_probs, axis=1)
@@ -226,7 +270,7 @@ def main():
         "harm_catch_rate_90_95": {
             "target": "90.0% – 95.0%",
             "achieved": f"{eff_recall * 100:.2f}%",
-            "passed": 0.90 <= eff_recall <= 0.96,
+            "passed": 0.90 <= eff_recall <= 0.95,
         },
         "alert_precision_ge_70_80": {
             "target": ">= 70.0% – 80.0%",
@@ -248,11 +292,36 @@ def main():
             "achieved": f"PAUSE: {pause_rate * 100:.1f}%, HARD_BLOCK: {hard_block_rate * 100:.1f}%, ALLOW: {allow_rate * 100:.1f}%",
             "passed": True,
         },
+        "flagged_rate_low_enough": {
+            "target": "informational -- no fixed bar, but a high value means most traffic needs human review",
+            "achieved": f"{flagged_rate * 100:.1f}% of all test traffic flagged (PAUSE+HARD_BLOCK)",
+            "passed": True,
+        },
     }
+
+    # The user's own minimum-to-ship bar, scored separately from the script's built-in
+    # targets above (which use different numbers: 70-80% precision, >85% category
+    # accuracy, >=50% IoU). This block exists so a reader isn't left to compute FPR
+    # themselves from allow/pause/block rates.
+    user_bar_checks = {
+        "recall_ge_0.85": {"target": ">= 0.85", "achieved": round(eff_recall, 4), "passed": eff_recall >= 0.85},
+        "precision_ge_0.60": {"target": ">= 0.60", "achieved": round(block_precision, 4), "passed": block_precision >= 0.60},
+        "fpr_le_0.10": {"target": "<= 0.10", "achieved": round(benign_flagged_fpr, 4), "passed": benign_flagged_fpr <= 0.10},
+        "threshold_ge_0.40": {"target": ">= 0.40", "achieved": round(tau_safe, 4), "passed": tau_safe >= 0.40},
+    }
+    user_bar_all_passed = all(v["passed"] for v in user_bar_checks.values())
 
     report = {
         "timestamp": datetime.now().isoformat(),
         "model_checkpoint": str(ckpt_path),
+        "calibration_split": "val",
+        "reporting_split": "test",
+        "note": (
+            "Gate thresholds (tau_safe, tau_critical) are calibrated on the val split "
+            "only; every metric below is then computed on the held-out test split with "
+            "those fixed thresholds -- not on the same data the thresholds were chosen "
+            "from."
+        ),
         "dataset": {
             "total_samples": total_samples,
             "harmful_samples": total_harmful,
@@ -281,10 +350,34 @@ def main():
             "allow_rate": round(allow_rate, 4),
             "pause_rate": round(pause_rate, 4),
             "hard_block_rate": round(hard_block_rate, 4),
+            "flagged_rate": round(flagged_rate, 4),
+            "fpr_benign_flagged": round(benign_flagged_fpr, 4),
         },
         "criteria_verification": target_checks,
         "all_criteria_passed": all(v["passed"] for v in target_checks.values()),
+        "user_deployment_bar": user_bar_checks,
+        "user_deployment_bar_all_passed": user_bar_all_passed,
     }
+
+    # Real ScreenSpot measurement, loaded from disk rather than hardcoded -- if the
+    # file is missing, say so explicitly instead of inventing a number.
+    if SCREENSPOT_RESULTS_PATH.exists():
+        with open(SCREENSPOT_RESULTS_PATH, encoding="utf-8") as f:
+            screenspot_result = json.load(f)
+        screenspot_line = (
+            f"- **ScreenSpot-v2 Real UI Grounding Benchmark:** "
+            f"**{screenspot_result['mean_iou'] * 100:.2f}%** IoU "
+            f"(n={screenspot_result['n']}, checkpoint `{screenspot_result['checkpoint']}`; "
+            f"{screenspot_result.get('note', '')})"
+        )
+    else:
+        screenspot_line = (
+            "- **ScreenSpot-v2 Real UI Grounding Benchmark:** not measured "
+            f"(run `scripts/eval_screenspot.py` to produce {SCREENSPOT_RESULTS_PATH.name})."
+        )
+    report["screenspot_v2"] = (
+        screenspot_result if SCREENSPOT_RESULTS_PATH.exists() else "not measured"
+    )
 
     out_json_path = ROOT / args.out_json
     out_json_path.parent.mkdir(parents=True, exist_ok=True)
@@ -295,9 +388,10 @@ def main():
     out_md_path = ROOT / args.out_md
     md_content = f"""# SENTINEL-Vision Production Evaluation & Deployment Verification Report
 
-**Generated:** {report['timestamp']}  
-**Model Checkpoint:** `{ckpt_path}`  
-**Decision Gate Architecture:** `DecisionGate3Tier` (ALLOW / PAUSE / HARD_BLOCK)  
+**Generated:** {report['timestamp']}
+**Model Checkpoint:** `{ckpt_path}`
+**Decision Gate Architecture:** `DecisionGate3Tier` (ALLOW / PAUSE / HARD_BLOCK)
+**Gate thresholds calibrated on:** val split. **All metrics below reported on:** held-out test split (see `note` in the JSON report).
 
 ---
 
@@ -310,6 +404,17 @@ def main():
 | **Target Localization IoU** | **>= 50.0%** | **{effective_iou * 100:.2f}%** | {'PASSED' if target_checks['localization_iou_ge_50']['passed'] else 'NEEDS ATTENTION'} |
 | **Category Accuracy** | **> 85.0%** | **{cat_accuracy * 100:.2f}%** | {'PASSED' if target_checks['category_accuracy_gt_85']['passed'] else 'NEEDS ATTENTION'} |
 | **Deployment Gate Mode** | **Non-Binary 3-Tier Gate** | **ALLOW / PAUSE / BLOCK** | PASSED |
+
+### 1b. User's Minimum-to-Ship Deployment Bar (separate from the targets above)
+
+| Metric | Bar | Achieved | Status |
+|---|---|---|:---:|
+| Recall | >= 0.85 | {eff_recall:.4f} | {'PASSED' if user_bar_checks['recall_ge_0.85']['passed'] else 'FAILED'} |
+| Precision | >= 0.60 | {block_precision:.4f} | {'PASSED' if user_bar_checks['precision_ge_0.60']['passed'] else 'FAILED'} |
+| FPR (benign flagged) | <= 0.10 | {benign_flagged_fpr:.4f} | {'PASSED' if user_bar_checks['fpr_le_0.10']['passed'] else 'FAILED'} |
+| Threshold (tau_safe) | >= 0.40 | {tau_safe:.4f} | {'PASSED' if user_bar_checks['threshold_ge_0.40']['passed'] else 'FAILED'} |
+
+**Overall: {'PASSES' if user_bar_all_passed else 'DOES NOT PASS'} the user's deployment bar.**
 
 ---
 
@@ -334,9 +439,16 @@ Risk Score: [0.00] ─── ALLOW (Safe) ─── [{tau_safe:.2f}] ─── P
 
 - **Stage 1 Anchor Head IoU:** **{mean_stage1_iou * 100:.2f}%** across {len(raw_ious)} evaluated harmful elements.
 - **Refined Bounding Box IoU:** **{mean_iou * 100:.2f}%**.
-- **ScreenSpot Real UI Grounding Benchmark:** **65.72%** IoU.
-- **Synthetic Injection Ground Truth:** **99.60%** IoU.
+{screenspot_line}
 - **IoU >= 0.50 Success Rate:** **{frac_stage1_iou_ge_50 * 100:.2f}%**.
+
+---
+
+## 4. Traffic Disposition
+
+- **Flagged rate (PAUSE + HARD_BLOCK as % of all test traffic):** **{flagged_rate * 100:.1f}%**.
+  A high flagged rate means most real traffic needs human review regardless of the
+  recall/precision numbers above -- report this alongside them, not instead of them.
 """
     with open(out_md_path, "w", encoding="utf-8") as f:
         f.write(md_content)

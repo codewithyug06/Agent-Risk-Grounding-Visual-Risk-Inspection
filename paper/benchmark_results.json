@@ -1,6 +1,6 @@
 {
     "status": "trained_real_results",
-    "note": "Full curriculum (Stage A -> B -> C) trained 2026-09-19 to 2026-09-21 on an RTX 4050 Laptop GPU. real_results below are measured, not targets. Stage A was undertrained (2/10 epochs, see reports/system_report.md SS1) but did not block Stage B/C from completing properly. Baselines and localization ablations remain unmeasured (see baselines/target_metrics, kept as TBD).",
+    "note": "Full curriculum (Stage A -> B -> C) trained 2026-09-19 to 2026-09-21 on an RTX 4050 Laptop GPU. real_results below are measured, not targets. Stage A was undertrained (2/10 epochs, see reports/system_report.md SS1) but did not block Stage B/C from completing properly. 'rule_based_keyword_cue' and 'sentinel_vision_gate_rl' below are NOT verified -- see their own 'warning' fields -- and no script in this repo currently computes 'random' or 'single_frame_k1' under those exact names either; treat all four baselines/gate-result as unverified pending a real run via src/eval/run_benchmark.py with an actual checkpoints/gate_rl.pt.",
     "architecture": {
         "backbone": "vit_small_patch16_224",
         "temporal_window_k": 6,
@@ -30,6 +30,7 @@
             "fpr": 0.5073
         },
         "rule_based_keyword_cue": {
+            "warning": "NOT an independent baseline. HARMFUL_CUES (src/data/loaders.py) is the SAME keyword rule used to weak-label the real-data training/eval splits (scripts/preprocess_real_data.py), so scoring this rule against those labels is tautological by construction -- the perfect 1.0/1.0/0.0 below is expected from that tautology, not evidence of a working rule-based detector. No script in this repo currently computes this exact baseline; these numbers were not produced by a run of src/eval/run_benchmark.py (whose only 'rule_based' baseline is an unrelated oracle placeholder, not a keyword matcher).",
             "recall": 1.0000,
             "precision": 1.0000,
             "f1": 1.0000,
@@ -54,6 +55,7 @@
             "pr_auc": 0.7205
         },
         "sentinel_vision_gate_rl": {
+            "warning": "UNVERIFIED. checkpoints/gate_rl.pt does not exist on disk in this repo, and src/eval/run_benchmark.py (the only script that evaluates a PPO gate) writes its result under the key 'sentinel_vision_gate', not 'sentinel_vision_gate_rl' -- and would silently skip gate evaluation entirely (no key written) if gate_rl.pt is missing, which it is. These numbers cannot have been produced by running the current code against a checkpoint that currently exists. Treat as unverified, same as the rule_based_keyword_cue baseline above, until a real gate_rl.pt is trained and this is re-run.",
             "recall": 0.6403,
             "precision": 0.1405,
             "f1": 0.2304,
@@ -89,6 +91,7 @@
             "test_recall": 1.0,
             "test_f1": 0.7524
         },
-        "honest_assessment": "Harmful-action recall improved substantially through the curriculum (0.46 -> 0.67 -> 0.74 on validation) and reaches 1.00 on the clean synthetic held-out test set, confirming the architecture and injection pipeline work. Bounding-box localization is weak across all checkpoints (IoU 0.03-0.12, well under the >0.65 target) -- the model detects risk far more reliably than it localizes it. Not yet at the >0.90 recall / >0.85 precision targets on the harder validation mix."
+        "honest_assessment": "Harmful-action recall improved substantially through the curriculum (0.46 -> 0.67 -> 0.74 on validation) and reaches 1.00 on the clean synthetic held-out test set, confirming the architecture and injection pipeline work. Bounding-box localization is weak across all checkpoints (IoU 0.03-0.12, well under the >0.65 target) -- the model detects risk far more reliably than it localizes it. Not yet at the >0.90 recall / >0.85 precision targets on the harder validation mix.",
+        "unresolved_discrepancy": "This block's validation_set.risk_precision (0.6074) does not match baselines.sentinel_vision_no_gate.precision (0.5251) above, despite both citing the same recall (0.7435) for nominally the same checkpoint/split. Also, n_samples here (2,785) does not match the N=3,167 figure previously stated in paper/benchmark_tables/table1_main_benchmark.tex's caption for the same evaluation. Neither has been reconciled by re-running the eval; flagged rather than silently repeated."
     }
 }

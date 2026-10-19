@@ -68,3 +68,5 @@ outputs/
 # Local incident logs & runs
 wandb/
 .sentinel_vision/
+runs/
+

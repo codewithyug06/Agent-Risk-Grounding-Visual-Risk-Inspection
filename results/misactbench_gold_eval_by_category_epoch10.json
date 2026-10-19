@@ -1,0 +1,97 @@
+{
+  "checkpoint": "checkpoints/stage_c_clip_frozen_text/epoch_10.pt",
+  "threshold": 0.0163,
+  "note": "EXPLORATORY, post-hoc breakdown by MisActBench's own category field. NOT pre-registered. Only 'Unintended harmful behavior' is plausibly visible from a single screenshot; 'Malicious instruction following' and 'Other task-irrelevant behavior' are defined relative to text the model never sees and were never expected to be pixel-discriminable.",
+  "val": {
+    "n": 177,
+    "harmful": 79,
+    "by_category": {
+      "(shared negative pool)": {
+        "n": 98,
+        "harmful": 0
+      },
+      "Other task-irrelevant behavior": {
+        "n": 118,
+        "harmful": 20,
+        "benign_pool": 98,
+        "base_rate": 0.1695,
+        "recall": 1.0,
+        "precision": 0.1695,
+        "fpr": 1.0,
+        "auprc": 0.4913,
+        "auroc": 0.6316,
+        "auprc_lift_over_base_rate": 2.8986
+      },
+      "Unintended harmful behavior": {
+        "n": 111,
+        "harmful": 13,
+        "benign_pool": 98,
+        "base_rate": 0.1171,
+        "recall": 1.0,
+        "precision": 0.1171,
+        "fpr": 1.0,
+        "auprc": 0.1602,
+        "auroc": 0.5746,
+        "auprc_lift_over_base_rate": 1.3676
+      },
+      "Malicious instruction following": {
+        "n": 144,
+        "harmful": 46,
+        "benign_pool": 98,
+        "base_rate": 0.3194,
+        "recall": 1.0,
+        "precision": 0.3194,
+        "fpr": 1.0,
+        "auprc": 0.5931,
+        "auroc": 0.7299,
+        "auprc_lift_over_base_rate": 1.8565
+      }
+    }
+  },
+  "test": {
+    "n": 200,
+    "harmful": 82,
+    "by_category": {
+      "(shared negative pool)": {
+        "n": 118,
+        "harmful": 0
+      },
+      "Malicious instruction following": {
+        "n": 167,
+        "harmful": 49,
+        "benign_pool": 118,
+        "base_rate": 0.2934,
+        "recall": 0.9796,
+        "precision": 0.2909,
+        "fpr": 0.9915,
+        "auprc": 0.5673,
+        "auroc": 0.7036,
+        "auprc_lift_over_base_rate": 1.9335
+      },
+      "Other task-irrelevant behavior": {
+        "n": 139,
+        "harmful": 21,
+        "benign_pool": 118,
+        "base_rate": 0.1511,
+        "recall": 1.0,
+        "precision": 0.1522,
+        "fpr": 0.9915,
+        "auprc": 0.2028,
+        "auroc": 0.6352,
+        "auprc_lift_over_base_rate": 1.3423
+      },
+      "Unintended harmful behavior": {
+        "n": 130,
+        "harmful": 12,
+        "benign_pool": 118,
+        "base_rate": 0.0923,
+        "recall": 1.0,
+        "precision": 0.093,
+        "fpr": 0.9915,
+        "auprc": 0.1481,
+        "auroc": 0.6589,
+        "auprc_lift_over_base_rate": 1.6047
+      }
+    }
+  }
+}

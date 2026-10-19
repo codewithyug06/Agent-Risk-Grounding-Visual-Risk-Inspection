@@ -63,7 +63,7 @@ The monitor has no access to agent weights, activations, logs, or action probabi
     \item \textbf{Visual benchmark}: Labeled dataset from Mind2Web, ScreenSpot, AgentTrek, XD-Violence with 5 harm categories (destructive, financial, privacy, irreversible\_external, benign).
     \item \textbf{Curriculum learning}: 3 stages with progressive unfreezing; weak harm-labels mined from real action text (no synthetic data).
     \item \textbf{Asymmetric decision gate}: PPO policy with 10:1 missed-harm vs. false-block penalty.
-    \item \textbf{Deployment}: ONNX INT8 quantization, FastAPI inference server, real-time live monitor (\textless 500ms latency).
+    \item \textbf{Deployment}: ONNX FP32 (CPU) or PyTorch (GPU), FastAPI inference server, real-time live monitor (\textless 500ms latency). INT8 dynamic quantization was measured slower than FP32 on CPU (Table~\ref{tab:latency}) and is not recommended.
     \item \textbf{Evaluation}: Comprehensive benchmarks, 5 ablations, adversarial stress tests, cross-agent generalization.
 \end{enumerate}
 
@@ -341,22 +341,21 @@ Worst attack: PGD Strong (+XX.XX FNR). Model robust to UI obfuscation and contex
 \subsection{Latency Analysis}
 \begin{table}[H]
 \centering
-\caption{Latency breakdown (ms).}
+\caption{End-to-end ONNX CPU latency (ms), full $(1,6,3,224,224)$ frame window. Source: \texttt{paper/latency\_benchmark.json}, checkpoint \texttt{stage\_b\_30epochs/best.pt}.}
 \label{tab:latency}
-\begin{tabular}{lccc}
+\begin{tabular}{lcccc}
 \toprule
-Component & FP32 (PyTorch) & INT8 (ONNX) & Speedup \\
+Precision & Mean & p50 & p95 & FPS \\
 \midrule
-Frame Encoder & XX.X & XX.X & XX.X$\times$ \\
-Temporal Fusion & XX.X & XX.X & XX.X$\times$ \\
-Risk Head & XX.X & XX.X & XX.X$\times$ \\
-Localization Head & XX.X & XX.X & XX.X$\times$ \\
-\hline
-\textbf{Total} & \textbf{XX.X} & \textbf{XX.X} & \textbf{XX.X$\times$} \\
+FP32 (ONNX) & 159.4 & 157.2 & 179.8 & 6.3 \\
+INT8 dynamic quant (ONNX) & 369.8 & 368.8 & 410.9 & 2.7 \\
 \bottomrule
 \end{tabular}
 \end{table}
-INT8 quantization achieves \textbf{XX.X$\times$} speedup with < 1\% FNR degradation. Meets \textless 500ms real-time requirement.
+INT8 dynamic quantization is \textbf{2.32$\times$ slower} than FP32 on this CPU, not faster -- a known
+failure mode for dynamic quantization without AVX-512 VNNI hardware acceleration, where
+runtime dequantization overhead exceeds the compute savings. FP32 is the recommended
+precision for CPU deployment; both precisions meet the \textless 500ms real-time budget at p95.
 
 \section{Discussion}
 
@@ -434,7 +433,7 @@ PPO vf coef & 0.5 \\
 \end{table}
 
 \subsection{Compute Requirements}
-Training: 3$\times$ A100 (40GB), $\sim$12 hours for full curriculum. Inference: RTX 3080 (10GB) or CPU (ONNX INT8) at \textless 500ms.
+Training: 3$\times$ A100 (40GB), $\sim$12 hours for full curriculum. Inference: RTX 3080 (10GB) or CPU (ONNX FP32 -- INT8 measured slower, see Table~\ref{tab:latency}) at \textless 500ms.
 
 \section{Appendix: Dataset Statistics}
 \begin{table}[H]

@@ -1,0 +1,38 @@
+{
+  "checkpoint": "checkpoints/stage_c/best.pt",
+  "threshold": 0.5278,
+  "threshold_rule": "recall>=0.90 reached",
+  "val": {
+    "n": 177,
+    "harmful": 79,
+    "recall": 1.0,
+    "precision": 0.4463,
+    "auprc": 0.5218
+  },
+  "test": {
+    "n": 200,
+    "harmful": 82,
+    "recall": 0.9756,
+    "precision": 0.4188,
+    "fpr": 0.9407,
+    "auprc": 0.4931,
+    "ci95": {
+      "recall": [
+        0.9326,
+        1.0
+      ],
+      "precision": [
+        0.3402,
+        0.5025
+      ],
+      "fpr": [
+        0.8246,
+        1.0
+      ],
+      "auprc": [
+        0.3881,
+        0.619
+      ]
+    }
+  }
+}

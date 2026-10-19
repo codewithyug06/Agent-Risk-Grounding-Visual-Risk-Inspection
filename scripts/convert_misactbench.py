@@ -128,13 +128,22 @@ def main() -> None:
     counts = {"train": {"harmful": 0, "benign": 0}, "val": {"harmful": 0, "benign": 0}, "test": {"harmful": 0, "benign": 0}}
     cat_counts = {"train": {}, "val": {}, "test": {}}
     skipped_missing_image = 0
+    skipped_unlabeled = {"train": 0, "val": 0, "test": 0}
 
     for tid, traj in data.items():
         split = split_of_traj[tid]
         instruction = traj.get("instruction", "")
         steps = traj.get("steps", {})
         for step_key, step in sorted(steps.items(), key=lambda kv: int(kv[0])):
-            label = 1 if step.get("label") else 0
+            raw_label = step.get("label")
+            if raw_label is None:
+                # Unannotated step. Coercing this to benign (the previous
+                # behavior) silently merges "never labeled" with "confirmed
+                # benign" -- excluded instead, since "gold" should mean
+                # confirmed-labeled.
+                skipped_unlabeled[split] += 1
+                continue
+            label = 1 if raw_label else 0
             agent_output = step.get("agent_output", "")
             if label == 1:
                 category = categorize(agent_output + " " + instruction)
@@ -182,7 +191,17 @@ def main() -> None:
             cat_name = {v: k for k, v in CATEGORY_MAP.items()}[category]
             cat_counts[split][cat_name] = cat_counts[split].get(cat_name, 0) + 1
 
-    for split in ("train", "val", "test"):
+    # MisActBench is used only as a held-out gold evaluation set (val/test);
+    # it is deliberately NOT mixed into train, to keep every one of this
+    # project's pre-registered gold-eval runs comparable against the exact
+    # same held-out population. (See scripts/add_misactbench_train.py.disabled
+    # for an explicit, opt-in, leakage-checked path to add it to train later.)
+    splits_to_write = ("val", "test")
+    if records["train"]:
+        print(f"NOTE: {len(records['train'])} train-split records computed but "
+              "NOT written -- MisActBench train rows are intentionally excluded.")
+
+    for split in splits_to_write:
         out_path = PROCESSED_DIR / f"{split}.jsonl"
         with open(out_path, "a", encoding="utf-8") as f:
             for rec in records[split]:
@@ -199,13 +218,18 @@ def main() -> None:
 
     if skipped_missing_image:
         print(f"Skipped {skipped_missing_image} steps with missing/unreadable screenshots.")
+    total_skipped_unlabeled = sum(skipped_unlabeled.values())
+    if total_skipped_unlabeled:
+        print(f"Skipped {total_skipped_unlabeled} unlabeled (label=null) steps, excluded from gold scoring: {skipped_unlabeled}")
 
     stats_path = PROCESSED_DIR / "stats.json"
     if stats_path.exists():
         with open(stats_path, encoding="utf-8") as f:
             stats = json.load(f)
-        stats.setdefault("sources", {})["misactbench"] = sum(len(records[s]) for s in records)
-        for split in ("train", "val", "test"):
+        stats.setdefault("sources", {})["misactbench"] = (
+            stats.get("sources", {}).get("misactbench", 0) + sum(len(records[s]) for s in splits_to_write)
+        )
+        for split in splits_to_write:
             stats[split]["n"] += len(records[split])
             stats[split]["harmful"] += counts[split]["harmful"]
             stats[split]["benign"] += counts[split]["benign"]
@@ -213,7 +237,7 @@ def main() -> None:
                 stats[split]["category_counts"][cat_name] = (
                     stats[split]["category_counts"].get(cat_name, 0) + c
                 )
-        stats["total"] = stats.get("total", 0) + sum(len(records[s]) for s in records)
+        stats["total"] = stats.get("total", 0) + sum(len(records[s]) for s in splits_to_write)
         with open(stats_path, "w", encoding="utf-8") as f:
             json.dump(stats, f, indent=2)
         print(f"Updated {stats_path}")

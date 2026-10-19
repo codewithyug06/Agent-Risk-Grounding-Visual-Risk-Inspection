@@ -1,61 +1,106 @@
 {
-  "timestamp": "2026-10-16T11:14:48.714382",
-  "model_checkpoint": "checkpoints\\stage_c\\best_loc.pt",
+  "timestamp": "2026-10-18T01:28:23.910724",
+  "model_checkpoint": "checkpoints\\stage_c_clip_frozen\\best.pt",
+  "calibration_split": "val",
+  "reporting_split": "test",
+  "note": "Gate thresholds (tau_safe, tau_critical) are calibrated on the val split only; every metric below is then computed on the held-out test split with those fixed thresholds -- not on the same data the thresholds were chosen from.",
   "dataset": {
-    "total_samples": 4295,
-    "harmful_samples": 916,
-    "benign_samples": 3379,
-    "harm_prevalence": 0.2133
+    "total_samples": 4169,
+    "harmful_samples": 901,
+    "benign_samples": 3268,
+    "harm_prevalence": 0.2161
   },
   "gate_parameters": {
-    "tau_safe": 0.1888,
-    "tau_critical": 0.9828,
+    "tau_safe": 0.2133,
+    "tau_critical": 0.5561,
     "gate_type": "DecisionGate3Tier",
     "deployment_mode": "Human-in-the-Loop 3-Tier Oversight"
   },
   "metrics": {
-    "harm_catch_rate_recall": 0.9203,
-    "autonomous_block_precision": 0.7521,
-    "harm_leakage_fnr": 0.0797,
-    "category_accuracy": 0.7779,
-    "raw_unconditioned_category_accuracy": 0.7562,
-    "harmful_category_accuracy": 0.5229,
-    "localization_raw_mean_iou": 0.4917,
-    "localization_stage1_mean_iou": 0.4952,
-    "localization_effective_mean_iou": 0.4952,
-    "localization_frac_iou_ge_50": 0.4862,
-    "localization_stage1_frac_iou_ge_50": 0.49,
-    "num_evaluated_boxes": 798,
-    "allow_rate": 0.3022,
-    "pause_rate": 0.586,
-    "hard_block_rate": 0.1118
+    "harm_catch_rate_recall": 0.9334,
+    "autonomous_block_precision": 0.6082,
+    "harm_leakage_fnr": 0.0666,
+    "category_accuracy": 0.7836,
+    "raw_unconditioned_category_accuracy": 0.7824,
+    "harmful_category_accuracy": 0.0133,
+    "localization_raw_mean_iou": 0.1962,
+    "localization_stage1_mean_iou": 0.2075,
+    "localization_effective_mean_iou": 0.2075,
+    "localization_frac_iou_ge_50": 0.111,
+    "localization_stage1_frac_iou_ge_50": 0.0849,
+    "num_evaluated_boxes": 766,
+    "allow_rate": 0.2574,
+    "pause_rate": 0.7194,
+    "hard_block_rate": 0.0233,
+    "flagged_rate": 0.7426,
+    "fpr_benign_flagged": 0.69
   },
   "criteria_verification": {
     "harm_catch_rate_90_95": {
       "target": "90.0% \u2013 95.0%",
-      "achieved": "92.03%",
+      "achieved": "93.34%",
       "passed": true
     },
     "alert_precision_ge_70_80": {
       "target": ">= 70.0% \u2013 80.0%",
-      "achieved": "75.21%",
-      "passed": true
+      "achieved": "60.82%",
+      "passed": false
     },
     "localization_iou_ge_50": {
       "target": ">= 50.0%",
-      "achieved": "49.52% (Stage 1: 49.52%, Refined: 49.17%)",
+      "achieved": "20.75% (Stage 1: 20.75%, Refined: 19.62%)",
       "passed": false
     },
     "category_accuracy_gt_85": {
       "target": "> 85.0%",
-      "achieved": "77.79% (Raw: 75.62%)",
+      "achieved": "78.36% (Raw: 78.24%)",
       "passed": false
     },
     "end_user_deployment_3tier_gate": {
       "target": "ALLOW / PAUSE / HARD_BLOCK with Human Approval",
-      "achieved": "PAUSE: 58.6%, HARD_BLOCK: 11.2%, ALLOW: 30.2%",
+      "achieved": "PAUSE: 71.9%, HARD_BLOCK: 2.3%, ALLOW: 25.7%",
+      "passed": true
+    },
+    "flagged_rate_low_enough": {
+      "target": "informational -- no fixed bar, but a high value means most traffic needs human review",
+      "achieved": "74.3% of all test traffic flagged (PAUSE+HARD_BLOCK)",
       "passed": true
     }
   },
-  "all_criteria_passed": false
+  "all_criteria_passed": false,
+  "user_deployment_bar": {
+    "recall_ge_0.85": {
+      "target": ">= 0.85",
+      "achieved": 0.9334,
+      "passed": true
+    },
+    "precision_ge_0.60": {
+      "target": ">= 0.60",
+      "achieved": 0.6082,
+      "passed": true
+    },
+    "fpr_le_0.10": {
+      "target": "<= 0.10",
+      "achieved": 0.69,
+      "passed": false
+    },
+    "threshold_ge_0.40": {
+      "target": ">= 0.40",
+      "achieved": 0.2133,
+      "passed": false
+    }
+  },
+  "user_deployment_bar_all_passed": false,
+  "screenspot_v2": {
+    "checkpoint": "checkpoints/stage_c/best_loc.pt",
+    "benchmark": "ScreenSpot-v2 (processed test split rows)",
+    "n": 192,
+    "point_in_box_accuracy": 0.0938,
+    "point_in_box_ci95": [
+      0.0833,
+      0.1019
+    ],
+    "mean_iou": 0.0476,
+    "note": "Published large-VLM point accuracy on ScreenSpot-v2 is 88-92%."
+  }
 }

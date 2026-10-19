@@ -46,6 +46,84 @@ records) alongside pixels — trajectory/text context is documented to matter
 more than pixels alone for this task (Control OSWorld); pixel-only detection
 should be considered a closed, negative result until one of those changes.
 
+## UPDATE 2 (2026-10-18) — reporting-honesty fixes + category-split re-analysis
+
+An external review of the reporting/eval-methodology layer (not the model) was verified
+claim-by-claim against the code. Confirmed and fixed:
+
+- **Null-label data bug**: `scripts/convert_misactbench.py` was silently coercing
+  `label: null` (unannotated, 249 of 684 val+test rows) into "benign" — fixed to exclude
+  those rows instead. This moved the gold base rate from 0.236 (n=347) to **0.41 (n=200)**
+  and test AUPRC from 0.226 to **0.4199, 95% CI [0.347, 0.513]** — but the CI still contains
+  the new base rate, so **the chance-level finding above is unchanged, just computed on a
+  cleaner population.** See `results/misactbench_gold_eval_clip_frozen_postA7.json`.
+- **MisActBench category-split re-analysis (exploratory, not pre-registered) —
+  inconclusive**: checked whether the chance-level result was concentrated in
+  MisActBench's two text-dependent categories rather than the one plausibly visible from
+  pixels ("Unintended harmful behavior"). Raw AUPRC isn't comparable across categories here
+  (each has a different base rate against the shared benign pool); AUROC is. Test AUROC:
+  Malicious instruction following 0.489, Other task-irrelevant 0.487, **Unintended harmful
+  behavior 0.590** (numerically highest, not lowest) — but this ranking does not replicate on
+  val (0.628 / 0.287 / 0.280), and with only 12-49 positive examples per category and no
+  per-category CI, **this is not statistically conclusive in either direction**. Correcting
+  an earlier draft of this note, which wrongly compared raw AUPRC across categories with
+  different base rates and concluded the visual category performed worst — it does not.
+  See `results/misactbench_gold_eval_by_category.json`.
+- **Circular gate calibration**: `scripts/evaluate_3tier_production.py` calibrated
+  thresholds on val and reported metrics on the same val data — proven circular (two
+  different checkpoints produced the identical 92.03% recall, which is just
+  `target_recall=0.92` reflected back). Fixed to calibrate on val, report on held-out test.
+  The honest result for the canonical checkpoint (`stage_c_clip_frozen/best.pt`): recall
+  93.34% (passes), **precision 60.82% (fails the 70-80% target)**, category accuracy 78.36%
+  (fails >85%), localization IoU 20.75% (fails >=50%), and **74.3% of all test traffic
+  flagged** (PAUSE+HARD_BLOCK) — `all_criteria_passed: false`. See
+  `results/production_evaluation_report.json`.
+- **Fabricated metrics removed**: hardcoded "65.72% IoU" (ScreenSpot) and "99.60% IoU"
+  (synthetic ground truth) strings in `evaluate_3tier_production.py` and `README.md` had no
+  corresponding computation anywhere in the repo — the real ScreenSpot-v2 measurement is
+  **4.76% IoU** (`results/screenspot_v2_point_accuracy.json`), ~14x lower than the fabricated
+  number. Removed/corrected.
+- **Tautological baseline**: `rule_based_keyword_cue`'s perfect 100%/100%/0% score in
+  `paper/benchmark_results.json` is explained by the same keyword rule (`HARMFUL_CUES`)
+  being both the label generator and the thing being scored — relabeled as not an
+  independent baseline.
+- **PPO gate numbers are unverified, not a confirmed regression**: `checkpoints/gate_rl.pt`
+  does not exist in this repo, and `src/eval/run_benchmark.py` (the only script that
+  evaluates a PPO gate) writes its result under a different key name
+  (`sentinel_vision_gate`, not `sentinel_vision_gate_rl`) and would silently skip gate
+  evaluation entirely if the checkpoint is missing, which it is. The 64.03%/14.05%/95.37%
+  numbers in `paper/benchmark_results.json` cannot have come from running current code
+  against a checkpoint that currently exists — marked unverified there, same treatment as
+  the tautological `rule_based_keyword_cue` baseline.
+- **Decisive check: no threshold meets the deployment bar, so RL training is not the
+  bottleneck.** Before deciding whether to train a PPO gate, swept every threshold on val
+  risk scores (`results/val_test_scores_stage_c_clip_frozen.npz`, cached so this took
+  seconds, not a model-inference rerun) against a user-specified minimum-to-ship bar
+  (recall >= 0.85, FPR <= 0.10). **No val threshold satisfies both simultaneously**: the
+  best point at FPR <= 0.10 only reaches recall 0.45; the best point at recall >= 0.85 has
+  FPR 0.51 (5x over the ceiling). Applying each threshold to held-out test reproduces the
+  same conflict (recall 0.44/FPR 0.14, or recall 0.87/FPR 0.48). See
+  `results/threshold_sweep_vs_user_bar.json`. The gate's observation space
+  (`src/gate/decision_gate.py`: risk score + localization confidence + truncated category
+  one-hot, not just the score alone — see `_build_state`) could in principle let an RL
+  policy do better than a pure threshold, but harmful-row category accuracy is only 1.33%
+  (near-useless) and the gold val set is only 177-258 rows (too few to train RL on
+  meaningfully). **Conclusion: this is the same labeled-data/signal-quality ceiling as the
+  detection result above, not a reward-shaping problem with the gate specifically.**
+  Training a new PPO gate is not recommended until the underlying risk score itself
+  improves (more/better labels, or text+pixel context) — it would very likely just learn to
+  replicate the same floor the threshold sweep already found. Recommend: ship
+  `DecisionGate3Tier` (threshold-only, no RL) framed as monitor-only, and do not present it
+  as meeting the deployment bar.
+- **ONNX INT8 latency**: reconciled two different, non-matching latency number pairs across
+  README/draft.tex/system_report.md down to one authoritative source
+  (`paper/latency_benchmark.json`: FP32 159.4ms / INT8 369.8ms, a 2.32x slowdown, not a
+  speedup as one unfilled placeholder in `draft.tex` had implied).
+
+Deferred (out of scope for this fix pass, per explicit prioritization): fixing the PPO
+gate's reward shaping, and the "feed instruction text alongside pixels" architecture
+change — both come after the reporting layer is trustworthy, not before.
+
 ---
 
 **Below (§1-§5): the 2026-09-21 synthetic-data report, kept for history.**
@@ -172,15 +250,19 @@ regenerates `paper/latency_benchmark.json`, which is the authoritative source.
 
 | Model | mean | p50 | p95 | p99 | FPS |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| ONNX FP32 | 198.2ms | 199.2ms | 207.5ms | 210.6ms | 5.0 |
-| ONNX INT8 (dynamic quant) | 366.7ms | 345.5ms | 463.2ms | 546.7ms | 2.7 |
+| ONNX FP32 | 159.4ms | 157.2ms | 179.8ms | 187.7ms | 6.3 |
+| ONNX INT8 (dynamic quant) | 369.8ms | 368.8ms | 410.9ms | 460.8ms | 2.7 |
 
-**INT8 dynamic quantization was slower than FP32 on this CPU** (0.54x
+(Numbers taken directly from `paper/latency_benchmark.json`, the authoritative source — a
+previous version of this table cited a different, non-matching pair of numbers for the
+same file; corrected here.)
+
+**INT8 dynamic quantization was slower than FP32 on this CPU** (0.43x
 "speedup," i.e. a slowdown) — the opposite of the previous fabricated
 INT8 latency claim. This is plausible on CPUs without INT8 VNNI acceleration, where
 dynamic quantization's runtime dequantization overhead exceeds the compute
-savings for a model this size. p95 (463.2ms) is still under the 500ms target,
-but only for INT8; FP32 (207.5ms) is well under it and currently faster.
+savings for a model this size. p95 (410.9ms) is still under the 500ms target,
+but only for INT8; FP32 (179.8ms) is well under it and currently faster.
 
 **Fixed**: ONNX output verification against the PyTorch model was failing
 (`category_probs`/`bbox`/`objectness` came back with mismatched shapes) because

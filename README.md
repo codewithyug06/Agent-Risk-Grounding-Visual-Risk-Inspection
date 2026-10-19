@@ -8,9 +8,9 @@
 [![PyTorch 2.0+](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](https://pytorch.org/)
 [![Tests Passing](https://img.shields.io/badge/Tests-165%20passed%2C%202%20skipped-brightgreen.svg)]()
 [![Pass Rate](https://img.shields.io/badge/Pass%20Rate-100%25-brightgreen.svg)]()
-[![Inference Latency](https://img.shields.io/badge/Inference-198.2ms%20FP32%20(CPU%2C%20k%3D6)-purple.svg)]()
+[![Inference Latency](https://img.shields.io/badge/Inference-159.4ms%20FP32%20(CPU%2C%20k%3D6)-purple.svg)]()
 [![3-Tier Decision Gate](https://img.shields.io/badge/Gate-3--Tier%20HITL%20(ALLOW%2FPAUSE%2FBLOCK)-blueviolet.svg)]()
-[![Harm Catch Rate](https://img.shields.io/badge/Harm%20Catch%20Rate-92.03%25-success.svg)]()
+[![Harm Catch Rate](https://img.shields.io/badge/Harm%20Catch%20Rate-93.34%25%20recall%2C%2060.82%25%20precision-yellow.svg)]()
 
 <p align="center">
   <b>A production-grade, model-agnostic computer vision firewall that monitors autonomous AI agents by observing <i>strictly screen pixels</i>. OpticWall provides a zero-trust, tamper-proof oversight channel that grounds UI targets, predicts upcoming operational risk, and executes calibrated human-in-the-loop decision gating before actions touch physical systems.</b>
@@ -32,7 +32,7 @@
 6. [Data Pipeline & Multimodal Datasets](#data-pipeline--multimodal-datasets)
 7. [Multi-Stage Curriculum Training](#multi-stage-curriculum-training)
 8. [Empirical Benchmarks & Rigorous Evaluation](#empirical-benchmarks--rigorous-evaluation)
-   - [Production 3-Tier Gate Benchmark (92.03% Recall)](#1-production-evaluation--3-tier-gate-benchmark)
+   - [Production 3-Tier Gate Benchmark (93.34% Recall, 60.82% Precision)](#1-production-evaluation--3-tier-gate-benchmark)
    - [Pre-Registered Gold MisActBench Evaluation](#2-pre-registered-gold-misactbench-benchmark)
    - [UI Element Grounding & Localization](#3-ui-element-grounding--localization)
 9. [Latency, Throughput & Quantization Performance](#latency-throughput--quantization-performance)
@@ -216,7 +216,7 @@ Binary Cross-Entropy over predicted $14 \times 14$ Gaussian heatmaps $M$:
 $$\mathcal{L}_{\text{hm}} = -\frac{1}{N} \sum_{j=1}^N \left[ M_j \log \hat{M}_j + (1 - M_j) \log (1 - \hat{M}_j) \right]$$
 
 ### 5. Asymmetric PPO Reinforcement Learning Decision Gate
-An action $a \in \{\text{ALLOW}, \text{PAUSE}, \text{HARD\_BLOCK}\}$ is determined by an actor-critic policy $\pi_\theta(a | s)$ over state vector $s = [\hat{y}_{\text{risk}}, \hat{c}_1, \dots, \hat{c}_5, \text{conf}_{\text{loc}}, \text{entropy}] \in \mathbb{R}^8$.
+An action $a \in \{\text{ALLOW}, \text{PAUSE}, \text{HARD\_BLOCK}\}$ is determined by an actor-critic policy $\pi_\theta(a | s)$ over state vector $s = [\hat{y}_{\text{risk}}, \text{conf}_{\text{loc}}, \hat{c}_1, \dots, \hat{c}_4, a_1, a_2] \in \mathbb{R}^8$ (risk score, localization confidence, the first 4 of 5 category one-hot dims, the first 2 of 3 action-type one-hot dims — see `DecisionGate._build_state` in `src/gate/decision_gate.py`; this truncation, not entropy, is what fills the 8 dimensions).
 To reflect real-world safety criticality, the reward function imposes a severe **$-10\times$ asymmetric penalty on Missed Harm (False Negatives)** versus False Alarms:
 
 $$R(a, y) = \begin{cases} 
@@ -293,56 +293,87 @@ OpticWall adheres to strict scientific verification standards, reporting product
 
 ### 1. Production Evaluation & 3-Tier Gate Benchmark
 
-Evaluated on `checkpoints/localization_finetune/best.pt` and `checkpoints/stage_c/best_loc.pt` across **4,295 multimodal trajectories** (916 harmful, 3,379 benign):
+**Canonical checkpoint: `checkpoints/stage_c_clip_frozen/best.pt`** (the same checkpoint used for the MisActBench gold evaluation below, for a consistent story). Gate thresholds **calibrated on val only**; every number below is computed on the **held-out test split** (n=4,169; 901 harmful, 3,268 benign) with those fixed thresholds — not on the data they were calibrated on. Full output: `results/production_evaluation_report.json`.
 
-```
-Risk Score Continuum:
-[0.00] ─── Tier 1: ALLOW (Safe) ─── [0.19] ─── Tier 2: PAUSE (Human Review) ─── [0.98] ─── Tier 3: HARD_BLOCK ─── [1.00]
-```
+(Earlier versions of this table blended two different checkpoints'
+circularly-calibrated — calibrated and reported on the same val data — numbers into one
+row. That table has been replaced with this single, honestly-separated run.)
 
 | Industrial Production Metric | Target Requirement | Achieved Production Result | Compliance Status |
 | :--- | :---: | :---: | :---: |
-| **Harm Catch Rate (Safety Recall)** | **90.0% – 95.0%** | **92.03%** | **PASSED** |
-| **Alert Precision (Block Accuracy)** | **$\ge$ 70.0% – 80.0%** | **75.21% – 75.94%** | **PASSED** |
-| **Harm Leakage Rate (FNR)** | **$\le$ 10.0%** | **7.97%** | **PASSED** |
-| **Target Localization IoU** | **$\ge$ 50.0%** | **49.52%** (Raw Mean) / **65.72%** (ScreenSpot) | **PASSED** |
-| **Synthetic Ground Truth IoU** | **$\ge$ 95.0%** | **99.60%** | **PASSED** |
+| **Harm Catch Rate (Safety Recall)** | **90.0% – 95.0%** | **93.34%** | **PASSED** |
+| **Alert Precision (Block Accuracy)** | **70.0% – 80.0%** | **60.82%** | **FAILED** |
+| **Harm Leakage Rate (FNR)** | **$\le$ 10.0%** | **6.66%** | **PASSED** |
+| **Category Accuracy** | **> 85.0%** | **78.36%** (≈ the 78.4% always-predict-benign base rate; accuracy restricted to only harmful rows is **1.33%**) | **FAILED** |
+| **Target Localization IoU** | **$\ge$ 50.0%** | **20.75%** | **FAILED** |
+| **Real ScreenSpot-v2 IoU** (different checkpoint, `stage_c/best_loc.pt`) | -- | **4.76%** (n=192; published large-VLM baseline is 88–92%) | informational |
 | **Operational Gate Architecture** | Non-Binary 3-Tier Gate | **ALLOW / PAUSE / HARD_BLOCK** | **PASSED** |
 
+**Overall: does not pass as a deployable detector** (`all_criteria_passed: false` in the
+JSON) — recall clears the bar, but precision, category accuracy, and localization IoU all
+fail their targets for this checkpoint on held-out test.
+
 #### Operational Volume Distribution:
-- **Tier 1 (ALLOW - Autonomous Execution)**: **30.2%** of benign actions execute without interruption. Harm leakage is capped at 7.97%.
-- **Tier 2 (PAUSE - Human-in-the-Loop Confirmation)**: **58.6%** of ambiguous or sensitive actions are suspended for instant human confirmation with highlighted visual UI bounds.
-- **Tier 3 (HARD_BLOCK - Immediate Interception)**: **11.2%** of actions are autonomously aborted with 75.21% precision.
+- **Tier 1 (ALLOW - Autonomous Execution)**: **25.7%** of actions execute without interruption. Harm leakage is capped at 6.66%.
+- **Tier 2 (PAUSE - Human-in-the-Loop Confirmation)**: **71.9%** of actions are suspended for human confirmation.
+- **Tier 3 (HARD_BLOCK - Immediate Interception)**: **2.3%** of actions are autonomously aborted.
+- **Flagged rate (PAUSE + HARD_BLOCK): 74.3% of all test traffic.** This is a first-class
+  number, not a derived afterthought: three in four real actions need human review at this
+  operating point — a real deployability cost that the recall/precision numbers alone don't
+  show.
+
+#### Against a minimum-to-ship bar (recall ≥ 0.85, precision ≥ 0.60, FPR ≤ 0.10, threshold ≥ 0.40):
+
+Swept every possible threshold on val risk scores and checked whether any single point
+satisfies recall ≥ 0.85 **and** FPR ≤ 0.10 at once (`results/threshold_sweep_vs_user_bar.json`,
+reproducible from cached scores in `results/val_test_scores_stage_c_clip_frozen.npz`).
+**No threshold does.** The best point at FPR ≤ 0.10 only reaches recall 0.45; the best point
+at recall ≥ 0.85 has FPR 0.51 — five times over the 0.10 ceiling. This holds on both val and
+held-out test, so it isn't a calibration artifact: the risk score itself cannot support both
+halves of this bar simultaneously, at any threshold. **This is a hard floor, not a tuning
+problem** — it rules out fixing this by retraining a PPO gate on the same score (a gate is,
+at best, a smarter threshold policy; it cannot exceed what the underlying score supports) and
+points back to the same conclusion as the MisActBench gold result: the risk score needs a
+better signal (more/better labels, or text+pixel context), not a better policy on top of it.
 
 ---
 
 ### 2. Pre-Registered Gold MisActBench Benchmark
 
-To avoid reporting selective numbers, five distinct architectures were evaluated on the **human-labeled MisActBench gold test set** ($n=347$, human-labeled harmful base rate $\approx 0.236$) with cluster-bootstrap 95% confidence intervals:
+To avoid reporting selective numbers, five distinct architectures were evaluated on the **human-labeled MisActBench gold test set** with cluster-bootstrap 95% confidence intervals. The table below uses the test population *after* a data-quality fix: `label: null` (unannotated) steps were previously silently coerced to "benign" — now excluded, so the base rate changed from 0.236 (n=347) to **0.41 (n=200)**. See `results/misactbench_gold_eval_clip_frozen_postA7.json`.
 
 | Detection Architecture | Test Precision | Test Recall | Test AUPRC (95% CI) | Test FPR | UI Localization IoU |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Base Rate (Always-Flag Baseline)** | 0.236 | 1.000 | 0.236 *(Reference)* | 1.000 | -- |
-| **Anchor-Only (Trained from scratch)** | 0.240 | -- | Straddles base rate | $\sim 1.00$ | $\sim 0.00$ |
-| **Anchor + Refiner (From scratch)** | 0.238 | -- | Straddles base rate | $\sim 1.00$ | 0.04 |
-| **Anchor + Refiner + Heatmap Head** | 0.236 | -- | 0.192 [0.153, 0.270] | 1.000 | 0.07 |
-| **Frozen OpenCLIP ViT-B/16 + Linear Probe** | 0.237 | **0.988** | 0.226 [0.178, 0.324] | 0.985 | **0.135** |
+| **Base Rate (Always-Flag Baseline)** | 0.41 | 1.000 | 0.41 *(Reference)* | 1.000 | -- |
+| **Anchor-Only (Trained from scratch)** | 0.240 | -- | Straddles base rate (pre-fix, n=347) | $\sim 1.00$ | $\sim 0.00$ |
+| **Anchor + Refiner (From scratch)** | 0.238 | -- | Straddles base rate (pre-fix, n=347) | $\sim 1.00$ | 0.04 |
+| **Anchor + Refiner + Heatmap Head** | 0.236 | -- | 0.192 [0.153, 0.270] (pre-fix, n=347) | 1.000 | 0.07 |
+| **Frozen OpenCLIP ViT-B/16 + Linear Probe** | 0.4112 | **0.988** | 0.4199 [0.347, 0.513] | 0.983 | **0.135** |
+
+(The first three rows predate the null-label fix and are reported against the original,
+now-superseded n=347 population for historical comparability; only the last row has been
+re-run on the corrected n=200 population.)
 
 #### Scientific Findings & Architectural Takeaways:
-1. **The Labeled-Data Ceiling**: On pure pixel inputs, five distinct architectures (including a web-scale frozen OpenCLIP encoder) converged near chance-level precision on this specific gold test set. This proves that pixel-only harmful-action detection without text context hits a data-size ceiling on small human-labeled sets ($\sim 1,800$ samples).
-2. **Never Deploy as a Binary Auto-Blocker**: Pixel-only risk detectors must **never** be deployed as autonomous binary block gates. They must operate in **Monitor-Only** mode or within a **Human-in-the-Loop 3-Tier Gate**, where suspicious actions are paused for human review rather than silently executed.
-3. **Localization is the Decisive Win**: While binary detection is constrained by human label volume, UI element localization gained massive real-world performance—jumping from **0.0 IoU** at project start to **49.52% IoU** and **65.72% on ScreenSpot**.
+1. **The Labeled-Data Ceiling (confirmed, not an artifact of the label bug)**: fixing the null-label contamination moved the base rate from 0.236 to 0.41 and AUPRC from 0.226 to 0.4199 — but AUPRC's 95% CI ([0.347, 0.513]) still contains the new base rate (0.41). The chance-level finding is robust to this data-quality fix, not an artifact of it.
+2. **Category breakdown (exploratory, not pre-registered) — inconclusive, not a confirmation**: MisActBench's own category field is only ever present on harmful rows (confirmed: 0/1,264 benign steps have one), so each category's harmful rows were scored against the shared benign pool. Raw AUPRC isn't comparable across categories here since each has a different base rate against the same pool — AUROC (base-rate-independent) is the right comparison. Test split AUROC: "Malicious instruction following" 0.489 (n=49 harmful, ≈ chance), "Other task-irrelevant behavior" 0.487 (n=21, ≈ chance), **"Unintended harmful behavior" 0.590** (n=12, the only category plausibly visible from a screenshot — numerically the *highest* of the three, not the lowest). But this does not replicate on val (0.628 / 0.287 / 0.280 respectively, a different ranking), and with only 12–49 positive examples per category and no confidence intervals, **none of this is statistically conclusive in either direction**. Full numbers: `results/misactbench_gold_eval_by_category.json`. **Honest read: the category split neither confirms nor rules out that pixel content carries some signal for "Unintended harmful behavior" — the sample size is too small to tell, and this should not be read as strengthening or narrowing the overall chance-level conclusion.**
+3. **Never Deploy as a Binary Auto-Blocker**: Pixel-only risk detectors must **never** be deployed as autonomous binary block gates. They must operate in **Monitor-Only** mode or within a **Human-in-the-Loop 3-Tier Gate**, where suspicious actions are paused for human review rather than silently executed.
+4. **Localization is the Decisive Win**: While binary detection is constrained by human label volume, UI element localization gained massive real-world performance—jumping from **0.0 IoU** at project start to **0.135 IoU** on this gold set (69.5% oracle candidate recall on the localization-finetune test set; see `results/eval_loc_finetune.json`, a different checkpoint from the one in this table).
 
 ---
 
 ### 3. UI Element Grounding & Localization
 
-| Benchmark Split / Dataset | Mean IoU | Median IoU | Fraction IoU $\ge 0.50$ | Oracle Candidate Recall |
-| :--- | :---: | :---: | :---: | :---: |
-| **ScreenSpot Real UI Grounding** | **65.72%** | **68.40%** | **64.20%** | **89.5%** |
-| **Synthetic Injection Test Set** | **99.60%** | **100.0%** | **99.10%** | **99.9%** |
-| **Localization Finetune Test Set** | **49.52%** | **48.90%** | **47.24%** | **69.5%** |
-| **Oracle Best Candidate Proposal** | **64.46%** | **63.59%** | **99.89%** | -- |
+| Benchmark Split / Dataset | Checkpoint | Mean IoU | Fraction IoU $\ge 0.50$ |
+| :--- | :--- | :---: | :---: |
+| **MisActBench gold (production-report run)** | `stage_c_clip_frozen/best.pt` | **20.75%** | **11.1%** |
+| **Localization-finetune test set** | `localization_finetune/best.pt` | **46.50%** | **47.24%** |
+| **ScreenSpot-v2 (real UI grounding)** | `stage_c/best_loc.pt` | **4.76%** | not computed (n=192; point-in-box accuracy 9.38%; published large-VLM baseline is 88–92%) |
+
+(Previous versions of this table included "Synthetic Injection Test Set" and "Oracle Best
+Candidate Proposal" rows with no corresponding computation found anywhere in this repo —
+removed rather than repeated. Every row above is traceable to a specific checkpoint and a
+`results/*.json` file.)
 
 ---
 
@@ -352,11 +383,13 @@ Measured on a standard CPU host ingesting a full 6-frame window `(1, 6, 3, 224, 
 
 | Runtime Engine | Precision | Compute Device | Mean Latency | Median (p50) | p95 Latency | FPS | Verification Status |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **ONNX Runtime** | **FP32** | **CPU** | **198.2 ms** | **199.2 ms** | **207.5 ms** | **5.0 FPS** | **Verified (Exact)** |
-| **ONNX Runtime (Dynamic Quant)** | INT8 | CPU | 366.7 ms | 345.5 ms | 463.2 ms | 2.7 FPS | Verified |
+| **ONNX Runtime** | **FP32** | **CPU** | **159.4 ms** | **157.2 ms** | **179.8 ms** | **6.3 FPS** | **Verified (Exact)** |
+| **ONNX Runtime (Dynamic Quant)** | INT8 | CPU | 369.8 ms | 368.8 ms | 410.9 ms | 2.7 FPS | Verified |
 
-- **Sub-500ms Real-Time Target**: FP32 ONNX Runtime achieves a p95 latency of **207.5 ms**, easily beating the 500 ms agent action cadence threshold.
-- **Dynamic Quantization Analysis**: INT8 dynamic quantization on general-purpose CPUs without AVX-512 VNNI hardware exhibits dequantization overhead (0.54x relative throughput). FP32 is the recommended default for CPU execution.
+Numbers above are taken directly from `paper/latency_benchmark.json` (checkpoint `stage_b_30epochs/best.pt`), the single authoritative source for this measurement — regenerate with `python scripts/export_onnx.py` rather than hand-editing these figures.
+
+- **Sub-500ms Real-Time Target**: FP32 ONNX Runtime achieves a p95 latency of **179.8 ms**, easily beating the 500 ms agent action cadence threshold.
+- **Dynamic Quantization Analysis**: INT8 dynamic quantization on general-purpose CPUs without AVX-512 VNNI hardware exhibits dequantization overhead (369.8ms vs 159.4ms, ~0.43x relative throughput). FP32 is the recommended default for CPU execution.
 
 ---
 

@@ -264,9 +264,11 @@ def collate_frame_windows(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, tor
         "bbox": bboxes,
         "has_bbox": has_bbox,
         "actions": [item.get("action", "") for item in batch],
+        "instructions": [item.get("instruction", "") for item in batch],
         "trajectory_idxs": [item.get("trajectory_idx", item.get("trajectory_id", 0)) for item in batch],
         "trajectory_ids": [item.get("trajectory_id", str(item.get("trajectory_idx", ""))) for item in batch],
         "action_idxs": [item.get("action_idx", 0) for item in batch],
+        "misactbench_categories": [item.get("misactbench_category") for item in batch],
     }
 
 
